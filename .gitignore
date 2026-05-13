@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+*.log
+.idea
+coverage
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Netlify CLI state
+.netlify
