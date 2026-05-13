@@ -230,10 +230,13 @@ export function LineChart({
   }, [propViewport]);
   const viewport = localViewport;
 
-  // Geometry. Larger left/right padding to host axis ticks + titles.
+  // Geometry. Axis padding sized to fit ~3-char tick labels (e.g. "12.5")
+  // at 10px mono on the outside, with axis titles ("km/l", "kWh/100 km")
+  // anchored at the axis line and extending *into* the plot — so the
+  // titles don't impose a constraint on the padding values.
   const W = 360;
   const H = 230;
-  const pad = { l: 42, r: 42, t: 20, b: 40 };
+  const pad = { l: 28, r: 30, t: 20, b: 40 };
   const innerW = W - pad.l - pad.r;
   const innerH = H - pad.t - pad.b;
 
@@ -469,9 +472,9 @@ export function LineChart({
   const leftActive = leftVals.length > 0;
   const rightActive = rightVals.length > 0;
 
-  const leftTicks = leftActive ? niceTicks(Math.min(...leftVals), Math.max(...leftVals), 4) : [];
+  const leftTicks = leftActive ? niceTicks(Math.min(...leftVals), Math.max(...leftVals), 6) : [];
   const rightTicks = rightActive
-    ? niceTicks(Math.min(...rightVals), Math.max(...rightVals), 4)
+    ? niceTicks(Math.min(...rightVals), Math.max(...rightVals), 6)
     : [];
   const leftMin = leftActive ? leftTicks[0] : 0;
   const leftMax = leftActive ? leftTicks[leftTicks.length - 1] : 1;
@@ -624,9 +627,9 @@ export function LineChart({
               y1={yy}
               y2={yy}
               stroke="var(--line)"
-              strokeWidth={i === 0 ? 1 : 0.5}
-              strokeDasharray={i === 0 ? '' : '2 4'}
-              opacity={0.55}
+              strokeWidth={i === 0 ? 1 : 0.6}
+              strokeDasharray={i === 0 ? '' : '3 3'}
+              opacity={i === 0 ? 0.9 : 0.7}
             />
           );
         })}

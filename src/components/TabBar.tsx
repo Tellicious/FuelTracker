@@ -61,17 +61,38 @@ function IconAdd() {
 }
 
 function IconVehicles() {
+  // Side-profile car drawn as ONE continuous outline (no internal seams).
+  // The path traces front-bumper round → hood → A-pillar → roof → C-pillar →
+  // trunk → back-bumper round → right side of underbody, then jumps (M) to
+  // draw the middle underbody segment between the two wheels. The wheels
+  // themselves are drawn as separate circles that visually "close" the
+  // wheel-arch gaps in the underbody.
+  //
+  // viewBox occupancy: 20w × 14h out of 24×24 → ~58% area, roughly matching
+  // the visual weight of the other tab icons.
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      {/* Cabin / roof line */}
-      <path d="M6 12 L7.5 7.5 Q8 6.5 9 6.5 L15 6.5 Q16 6.5 16.5 7.5 L18 12" />
-      {/* Body */}
-      <path d="M3 16 L3 13 Q3 12 4 12 L20 12 Q21 12 21 13 L21 16" />
-      {/* Underbody */}
-      <path d="M3 16 L21 16" />
-      {/* Wheels */}
-      <circle cx="7.5" cy="16" r="1.7" />
-      <circle cx="16.5" cy="16" r="1.7" />
+      <path d="
+        M4 16
+        L2.5 16
+        Q2 16 2 15.5
+        L2 13
+        Q2 12 3 12
+        L4.5 12
+        L7 6.8
+        Q7.5 6 8.5 6
+        L15.5 6
+        Q16.5 6 17 6.8
+        L19.5 12
+        L21 12
+        Q22 12 22 13
+        L22 15.5
+        Q22 16 21.5 16
+        L20 16
+        M16 16 L8 16
+      " />
+      <circle cx="6" cy="16.5" r="2" />
+      <circle cx="18" cy="16.5" r="2" />
     </svg>
   );
 }

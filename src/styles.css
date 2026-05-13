@@ -106,6 +106,8 @@ input[type='date'],
 select,
 textarea {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -113,6 +115,18 @@ textarea {
   min-height: var(--tap);
   outline: none;
   transition: border-color 120ms ease;
+}
+
+/* iOS Safari sizes <input type="datetime-local"> to fit its native picker
+   chrome — which on a 390px iPhone is wider than the parent column, causing
+   the field to break out of the form. Stripping the WebKit appearance lets
+   our CSS width win. The native iOS date/time wheel picker still pops up on
+   tap (that's tied to the input's type, not its appearance). */
+input[type='datetime-local'],
+input[type='date'],
+input[type='time'] {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
@@ -319,6 +333,7 @@ textarea.error {
   border-radius: var(--radius);
   padding: 12px 8px;
   min-width: 0;
+  text-align: center;
 }
 
 .kpi-label {
@@ -575,10 +590,10 @@ textarea.error {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  /* Reduced horizontal padding (was 14px 12px) so the chart line uses more
-     of the screen width on iPhone. The numeric axis ticks compensate for
-     the lost padding visually. */
-  padding: 12px 4px 12px;
+  /* Minimal horizontal padding so the SVG plot area uses as much of the
+     screen width as possible. The SVG itself reserves padding internally
+     for tick labels (pad.l/pad.r inside the chart). */
+  padding: 12px 2px 12px;
   margin-top: 12px;
 }
 
@@ -626,7 +641,8 @@ textarea.error {
   font-family: var(--font-mono);
   color: var(--muted);
   font-weight: 400;
-  font-size: 9px;
+  font-size: 10.5px;
+  margin-top: 3px;
 }
 
 /* Custom date-range row below the scale segment */
