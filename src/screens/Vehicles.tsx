@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { db, uid } from '../db/db';
 import type { Settings, Vehicle, VehicleType } from '../db/types';
-import { currencySymbol } from '../lib/format';
+import { currencySymbol, parseDecimalInput } from '../lib/format';
 
 interface Props {
   settings: Settings;
@@ -133,18 +133,22 @@ export function VehiclesScreen({ settings }: Props) {
                   Default electricity cost ({currencySymbol(settings.currency)}/kWh)
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  step="0.001"
                   value={editing.defaultElectricityCost ?? ''}
                   placeholder={`Falls back to global (${settings.defaultElectricityCost})`}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === '') {
+                      setEditing({ ...editing, defaultElectricityCost: null });
+                      return;
+                    }
+                    const n = parseDecimalInput(raw);
                     setEditing({
                       ...editing,
-                      defaultElectricityCost:
-                        e.target.value === '' ? null : parseFloat(e.target.value),
-                    })
-                  }
+                      defaultElectricityCost: Number.isFinite(n) ? n : null,
+                    });
+                  }}
                 />
               </div>
             )}

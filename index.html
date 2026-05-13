@@ -178,10 +178,37 @@
         dbg('UA: ' + navigator.userAgent);
         dbg('url: ' + location.href);
 
+        // In regular Safari (not standalone PWA), iOS injects its own scripts
+        // into every page for things like Apple Pay detection, AutoFill, smart
+        // app banners, etc. When any of those throws, the page's error
+        // listeners see it as a generic "Script error." with no filename, no
+        // stack, and no error object — the standard cross-origin masking
+        // signature. There is literally nothing we can do about errors in
+        // Safari's own code, and they don't affect our app (which is why the
+        // home-screen install works fine — Safari doesn't inject those scripts
+        // into standalone PWAs). Filter them out so the diagnostic card
+        // doesn't trigger on third-party noise.
+        function isMaskedScriptError(message, filename, errorObj) {
+          var m = String(message || '').trim();
+          if (m !== 'Script error.' && m !== 'Script error') return false;
+          return !filename && !errorObj;
+        }
+        var suppressed = 0;
+
         window.addEventListener('error', function (e) {
-          var details = [];
           var target = e.target || e.srcElement;
-          if (target && target !== window && (target.src || target.href)) {
+          // Resource-load failures get a different code path — always report.
+          var isResourceLoad =
+            target && target !== window && (target.src || target.href);
+          if (!isResourceLoad && isMaskedScriptError(e.message, e.filename, e.error)) {
+            suppressed += 1;
+            if (window.console && console.log) {
+              console.log('[ft] suppressing masked Script error #' + suppressed);
+            }
+            return;
+          }
+          var details = [];
+          if (isResourceLoad) {
             details.push('Failed to load: ' + (target.src || target.href));
             details.push('Tag: <' + (target.tagName || '?').toLowerCase() + '>');
           }
@@ -192,6 +219,13 @@
           reportError('error event (capture)', details.join('\n'), (e.error && e.error.stack) || '');
         }, true);
         window.onerror = function (message, source, lineno, colno, error) {
+          if (isMaskedScriptError(message, source, error)) {
+            suppressed += 1;
+            if (window.console && console.log) {
+              console.log('[ft] suppressing masked Script error #' + suppressed);
+            }
+            return;
+          }
           var details = [];
           details.push('message: ' + String(message || '(no message)'));
           if (source) details.push('at ' + source + ':' + (lineno || '?') + ':' + (colno || '?'));

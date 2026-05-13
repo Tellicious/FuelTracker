@@ -454,7 +454,6 @@ export function LineChart({
           showElec={showElec}
           visible={visible}
           onVisibleChange={onVisibleChange}
-          unitLabel={unitLabel}
         />
         <div className="empty" style={{ padding: '20px 8px' }}>
           Toggle a series on to see the chart.
@@ -570,7 +569,6 @@ export function LineChart({
         showElec={showElec}
         visible={visible}
         onVisibleChange={onVisibleChange}
-        unitLabel={unitLabel}
       />
 
       <svg
@@ -896,27 +894,23 @@ function SeriesToggles({
   showElec,
   visible,
   onVisibleChange,
-  unitLabel,
 }: {
   showGas?: boolean;
   showEquiv?: boolean;
   showElec?: boolean;
   visible: Record<ChartSeries, boolean>;
   onVisibleChange: (next: Record<ChartSeries, boolean>) => void;
-  unitLabel: string;
 }) {
   const toggle = (k: ChartSeries) => onVisibleChange({ ...visible, [k]: !visible[k] });
   const Pill = ({
     on,
     color,
     label,
-    sub,
     onClick,
   }: {
     on: boolean;
     color: string;
     label: string;
-    sub: string;
     onClick: () => void;
   }) => (
     <button
@@ -934,7 +928,6 @@ function SeriesToggles({
         style={{ background: color }}
       />
       <span className="chart-pill-label">{label}</span>
-      <span className="chart-pill-sub">{sub}</span>
     </button>
   );
   return (
@@ -944,7 +937,6 @@ function SeriesToggles({
           on={visible.gas}
           color={COLORS.gas}
           label="Gas"
-          sub={unitLabel}
           onClick={() => toggle('gas')}
         />
       )}
@@ -953,7 +945,6 @@ function SeriesToggles({
           on={visible.equiv}
           color={COLORS.equiv}
           label="Equivalent"
-          sub={unitLabel}
           onClick={() => toggle('equiv')}
         />
       )}
@@ -962,7 +953,6 @@ function SeriesToggles({
           on={visible.elec}
           color={COLORS.elec}
           label="Electricity"
-          sub="kWh/100 km"
           onClick={() => toggle('elec')}
         />
       )}

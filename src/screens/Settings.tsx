@@ -11,7 +11,7 @@ import {
   importFile,
   payloadHash,
 } from '../lib/backup';
-import { currencySymbol, fmtDate } from '../lib/format';
+import { currencySymbol, fmtDate, parseDecimalInput } from '../lib/format';
 
 const CURRENCIES = SUPPORTED_CURRENCIES;
 
@@ -180,13 +180,13 @@ export function SettingsScreen({ onToast }: Props) {
             Default electricity cost ({currencySymbol(settings.currency)}/kWh)
           </label>
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
-            step="0.001"
             value={settings.defaultElectricityCost}
-            onChange={(e) =>
-              update({ defaultElectricityCost: parseFloat(e.target.value) || 0 })
-            }
+            onChange={(e) => {
+              const n = parseDecimalInput(e.target.value);
+              update({ defaultElectricityCost: Number.isFinite(n) ? n : 0 });
+            }}
           />
           <div className="input-help">
             Pre-fills new entries. Per-vehicle overrides take precedence.

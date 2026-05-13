@@ -77,19 +77,15 @@ function IconVehicles() {
 }
 
 function IconSettings() {
+  // Toothed cog. 16 vertices around (12,12), alternating between an outer
+  // radius (tooth tip, r=9) and an inner radius (gap between teeth, r=6.5),
+  // every 22.5°. Combined with the inner axle-hole circle, this reads as a
+  // gear (not a sun, which was the problem with the previous radial-lines
+  // version). Coordinates pre-computed from r·cos(θ), r·sin(θ).
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      {/* Central circle */}
+      <path d="M 12 3 L 14.49 5.99 L 18.36 5.64 L 18.01 9.51 L 21 12 L 18.01 14.49 L 18.36 18.36 L 14.49 18.01 L 12 21 L 9.51 18.01 L 5.64 18.36 L 5.99 14.49 L 3 12 L 5.99 9.51 L 5.64 5.64 L 9.51 5.99 Z" />
       <circle cx="12" cy="12" r="3" />
-      {/* 8 short rays = simplified gear teeth */}
-      <path d="M12 3 L12 5.5" />
-      <path d="M12 18.5 L12 21" />
-      <path d="M3 12 L5.5 12" />
-      <path d="M18.5 12 L21 12" />
-      <path d="M5.6 5.6 L7.4 7.4" />
-      <path d="M16.6 16.6 L18.4 18.4" />
-      <path d="M18.4 5.6 L16.6 7.4" />
-      <path d="M7.4 16.6 L5.6 18.4" />
     </svg>
   );
 }

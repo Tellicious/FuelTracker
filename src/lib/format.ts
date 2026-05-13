@@ -21,6 +21,18 @@ export function fmtNumber(n: number | null | undefined, decimals = 2): string {
   });
 }
 
+/**
+ * Parse a user-typed decimal string accepting either `.` or `,` as the
+ * decimal separator. Returns NaN for unparseable input (caller should
+ * guard with isNaN / Number.isFinite). Designed for iPhone keyboards in
+ * locales where the comma is the decimal key — `parseFloat("0,30")` would
+ * stop at the comma and return 0, which is the bug this helper exists to
+ * prevent.
+ */
+export function parseDecimalInput(v: string): number {
+  return parseFloat((v || '').trim().replace(',', '.'));
+}
+
 export function fmtInt(n: number | null | undefined): string {
   if (n == null || !isFinite(n)) return '—';
   return Math.round(n).toLocaleString(userLocale);
@@ -29,7 +41,9 @@ export function fmtInt(n: number | null | undefined): string {
 export function fmtMoney(n: number | null | undefined, currency: string, decimals = 2): string {
   if (n == null || !isFinite(n)) return '—';
   const sym = CURRENCY_SYMBOL[currency] ?? currency;
-  return sym + ' ' + n.toLocaleString(userLocale, {
+  // Non-breaking space between symbol and number so the value never wraps
+  // mid-token in narrow containers (e.g. the 3-column KPI grid on iPhone).
+  return sym + '\u00A0' + n.toLocaleString(userLocale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });

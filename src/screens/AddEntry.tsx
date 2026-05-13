@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { db, uid } from '../db/db';
 import type { FuelUp, Settings, Vehicle, VehicleType } from '../db/types';
 import { reconcile, type DeriveField, type DeriveValues } from '../lib/derive';
-import { currencySymbol, fmtMoney, fromInputDateTime, toInputDateTime } from '../lib/format';
+import { currencySymbol, fmtMoney, fromInputDateTime, parseDecimalInput, toInputDateTime } from '../lib/format';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,10 +57,9 @@ function blank(vehicleId: string): FormState {
 }
 
 function toNumOrNull(v: string): number | null {
-  const t = v.trim().replace(',', '.');
-  if (t === '') return null;
-  const n = parseFloat(t);
-  return isFinite(n) ? n : null;
+  if (v.trim() === '') return null;
+  const n = parseDecimalInput(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +462,7 @@ function OdometerField({
       <label className="field-label">Odometer (km)</label>
       <div className="field-row">
         <input
-          type="number"
+          type="text"
           inputMode="numeric"
           step="1"
           min="0"
@@ -506,7 +505,7 @@ function EvChargingSection({
         <label className="field-label">Energy added</label>
         <div className="field-row">
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
             step="0.1"
             className={errors.amount ? 'error' : ''}
@@ -521,7 +520,7 @@ function EvChargingSection({
         <label className="field-label">Price per kWh</label>
         <div className="field-row">
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
             step="0.001"
             className={errors.unitPrice ? 'error' : ''}
@@ -621,7 +620,7 @@ function CostInput({
       <label className="field-label">{label}</label>
       <div className="field-row">
         <input
-          type="number"
+          type="text"
           inputMode="decimal"
           step={step}
           className={`${derived ? 'derived' : ''} ${error ? 'error' : ''}`.trim()}
@@ -650,7 +649,7 @@ function PhevElectricitySection({
         <label className="field-label">Avg electricity consumption</label>
         <div className="field-row">
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
             step="0.1"
             placeholder="from car display"
@@ -668,7 +667,7 @@ function PhevElectricitySection({
         <label className="field-label">Avg electricity cost</label>
         <div className="field-row">
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
             step="0.001"
             value={form.phevKwhPrice}

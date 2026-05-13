@@ -317,7 +317,7 @@ textarea.error {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 12px 10px;
   min-width: 0;
 }
 
@@ -330,11 +330,17 @@ textarea.error {
 
 .kpi-value {
   font-family: var(--font-mono);
-  font-size: 22px;
+  /* Fluid font so "€ 0.118" fits the column on a 360px iPhone (≈81px content
+     area per kpi) without breaking — at 4vw a 360px viewport gives ~14.4px,
+     clamped between 14 and 22 for tablet/desktop. */
+  font-size: clamp(14px, 4vw, 22px);
   font-weight: 500;
   letter-spacing: -0.02em;
   margin-top: 4px;
   line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-sub {
@@ -569,28 +575,38 @@ textarea.error {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px 12px 12px;
+  /* Reduced horizontal padding (was 14px 12px) so the chart line uses more
+     of the screen width on iPhone. The numeric axis ticks compensate for
+     the lost padding visually. */
+  padding: 12px 4px 12px;
   margin-top: 12px;
 }
 
-/* Clickable series-toggle pills that double as the legend */
+/* Clickable series-toggle pills that double as the legend. */
 .chart-toggles {
   display: flex;
-  flex-wrap: wrap;
+  /* No wrap — three pills must stay on one line even on a 360px iPhone.
+     The labels themselves are kept short (one word per pill, no unit
+     subscript) so the row fits in ~280px. */
+  flex-wrap: nowrap;
   gap: 6px;
-  margin-bottom: 8px;
+  margin: 0 8px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .chart-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px 5px 8px;
+  padding: 5px 12px 5px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-2);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: opacity 120ms ease, border-color 120ms ease;
 }
 .chart-pill-dot {

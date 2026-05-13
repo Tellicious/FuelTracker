@@ -22,7 +22,20 @@ import { VehiclesScreen } from './screens/Vehicles';
 
 export function App() {
   const settings = useLiveQuery(() => getSettings(), []);
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTabRaw] = useState<Tab>('dashboard');
+  // Reset scroll position whenever the user switches tabs — otherwise opening
+  // (say) Add Entry after scrolling down on Dashboard keeps the previous
+  // scroll offset and shows the new screen mid-page. Wraps setTabRaw so every
+  // call site (including the TabBar onChange) gets the behaviour for free.
+  const setTab = (next: Tab) => {
+    setTabRaw(next);
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+    } catch {
+      // 'instant' isn't recognised on older WebKit; fall back to plain scroll.
+      window.scrollTo(0, 0);
+    }
+  };
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [bannerHash, setBannerHash] = useState<string | null>(null);
