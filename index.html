@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0f1410" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f6faf7" media="(prefers-color-scheme: light)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="FuelTracker" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png" />
+    <title>FuelTracker</title>
+    <style>
+      #root:empty::before {
+        content: 'FuelTracker loading…';
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        color: #8b958f;
+        font: 14px -apple-system, BlinkMacSystemFont, sans-serif;
+        background: #0f1410;
+      }
+      @media (prefers-color-scheme: light) {
+        #root:empty::before { color: #6a746f; background: #f6faf7; }
+      }
+      /* Centered diagnostic card — hidden by default, only appears when an
+         uncaught error fires. Includes the diagnostic log so you can see both
+         what failed AND the environment it failed in. */
+      #ft-diag {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 20, 16, 0.88);
+        z-index: 9999;
+        padding: max(env(safe-area-inset-top, 0), 16px) 16px
+                 max(env(safe-area-inset-bottom, 0), 16px);
+        overflow: auto;
+      }
+      #ft-diag.visible { display: flex; }
+      #ft-diag-card {
+        margin: auto;
+        max-width: 560px;
+        width: 100%;
+        background: #1a221d;
+        border: 1px solid #2a3a30;
+        border-radius: 14px;
+        padding: 18px 18px 14px;
+        color: #d6e3da;
+        font: 12px ui-monospace, 'SF Mono', monospace;
+        max-height: calc(100vh - 32px);
+        max-height: calc(100dvh - 32px);
+        overflow: auto;
+      }
+      #ft-diag-card h2 {
+        margin: 0 0 10px;
+        font: 600 15px -apple-system, BlinkMacSystemFont, sans-serif;
+        color: #ff7a6e;
+      }
+      #ft-diag-card .ft-err {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #2a1716;
+        color: #ffb4ad;
+        padding: 10px 12px;
+        border-radius: 8px;
+        margin: 8px 0;
+      }
+      #ft-diag-card .ft-section-title {
+        margin-top: 14px;
+        color: #8b958f;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      #ft-diag-card .ft-log {
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: #9ec5b0;
+        line-height: 1.5;
+        margin-top: 6px;
+      }
+      #ft-diag-card .ft-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      #ft-diag-card button {
+        flex: 1;
+        background: #233027;
+        color: #d6e3da;
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font: 500 13px -apple-system, BlinkMacSystemFont, sans-serif;
+        cursor: pointer;
+      }
+      #ft-diag-card button:active { background: #2d3d33; }
+    </style>
+    <script>
+      (function () {
+        // Diagnostic log buffer — always echoed to console.log for remote
+        // inspection. Only painted on-screen when an uncaught error fires,
+        // and then as a centered card that includes both the error(s) and
+        // this log as context.
+        var log = [];
+        var errors = [];
+        function dbg(msg) {
+          log.push(msg);
+          if (window.console && console.log) console.log('[ft]', msg);
+          if (errors.length > 0) renderCard(); // refresh card if already open
+        }
+
+        function renderCard() {
+          if (!document.body) return; // wait for body
+          var card = document.getElementById('ft-diag');
+          if (!card) {
+            card = document.createElement('div');
+            card.id = 'ft-diag';
+            var inner = document.createElement('div');
+            inner.id = 'ft-diag-card';
+            card.appendChild(inner);
+            document.body.appendChild(card);
+          }
+          card.classList.add('visible');
+          var inner = document.getElementById('ft-diag-card');
+          inner.innerHTML = '';
+
+          var h = document.createElement('h2');
+          h.textContent = errors.length > 1
+            ? 'Something went wrong (' + errors.length + ' errors)'
+            : 'Something went wrong';
+          inner.appendChild(h);
+
+          errors.forEach(function (err) {
+            var box = document.createElement('div');
+            box.className = 'ft-err';
+            box.textContent =
+              err.prefix + '\n\n' + err.msg + (err.stack ? '\n\n' + err.stack : '');
+            inner.appendChild(box);
+          });
+
+          var t = document.createElement('div');
+          t.className = 'ft-section-title';
+          t.textContent = 'Diagnostic log';
+          inner.appendChild(t);
+          var l = document.createElement('div');
+          l.className = 'ft-log';
+          l.textContent = log.join('\n');
+          inner.appendChild(l);
+
+          var actions = document.createElement('div');
+          actions.className = 'ft-actions';
+          var reloadBtn = document.createElement('button');
+          reloadBtn.textContent = 'Reload';
+          reloadBtn.onclick = function () { location.reload(); };
+          var dismissBtn = document.createElement('button');
+          dismissBtn.textContent = 'Dismiss';
+          dismissBtn.onclick = function () { card.classList.remove('visible'); };
+          actions.appendChild(reloadBtn);
+          actions.appendChild(dismissBtn);
+          inner.appendChild(actions);
+        }
+
+        function reportError(prefix, msg, stack) {
+          errors.push({ prefix: prefix, msg: msg, stack: stack || '' });
+          if (document.body) renderCard();
+          // Otherwise we'll paint on DOMContentLoaded below.
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+          if (errors.length > 0) renderCard();
+        });
+
+        dbg('build: __FT_BUILD_STAMP_PLACEHOLDER__');
+        dbg('UA: ' + navigator.userAgent);
+        dbg('url: ' + location.href);
+
+        window.addEventListener('error', function (e) {
+          var details = [];
+          var target = e.target || e.srcElement;
+          if (target && target !== window && (target.src || target.href)) {
+            details.push('Failed to load: ' + (target.src || target.href));
+            details.push('Tag: <' + (target.tagName || '?').toLowerCase() + '>');
+          }
+          details.push('message: ' + (e.message || '(no message)'));
+          if (e.filename) {
+            details.push('at ' + e.filename + ':' + (e.lineno || '?') + ':' + (e.colno || '?'));
+          }
+          reportError('error event (capture)', details.join('\n'), (e.error && e.error.stack) || '');
+        }, true);
+        window.onerror = function (message, source, lineno, colno, error) {
+          var details = [];
+          details.push('message: ' + String(message || '(no message)'));
+          if (source) details.push('at ' + source + ':' + (lineno || '?') + ':' + (colno || '?'));
+          reportError('window.onerror', details.join('\n'), (error && error.stack) || '');
+        };
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          var msg = (r && (r.message || String(r))) || 'unknown';
+          reportError('unhandledrejection', msg, (r && r.stack) || '');
+        });
+
+        // ----- SW/cache cleanup -- BLOCKS entry script load until done -----
+        // In production: __FT_ENTRY__ is injected by the emit-entry-url plugin,
+        // and we load the entry module manually after cleanup so a stale SW
+        // can't intercept the fetch.
+        // In dev: __FT_ENTRY__ is absent; Vite's own <script type="module">
+        // tag in the body handles entry loading. We still do cleanup, just
+        // without the gate.
+        var entry = window.__FT_ENTRY__;
+        var devMode = !entry || !entry.src;
+        if (devMode) {
+          dbg('dev mode (Vite serving) — cleanup runs but entry tag is native.');
+        }
+
+        function loadEntry() {
+          if (devMode) return; // Vite's tag handles it in dev
+          var s = document.createElement('script');
+          s.type = 'module';
+          s.src = entry.src;
+          if (entry.crossorigin) s.crossOrigin = 'anonymous';
+          s.onerror = function () {
+            reportError(
+              'entry script.onerror',
+              'Failed to load entry module: ' + entry.src +
+                '\n(Most likely: 404 or wrong MIME type. ' +
+                'Verify dist/assets/ was uploaded and check Network tab.)',
+              ''
+            );
+          };
+          dbg('loading entry: ' + entry.src + (entry.crossorigin ? ' [CORS]' : ''));
+          function inject() { document.body.appendChild(s); }
+          if (document.body) inject();
+          else document.addEventListener('DOMContentLoaded', inject);
+        }
+
+        var hadSw = 0, hadCache = 0;
+        try { sessionStorage.getItem('x'); dbg('sessionStorage: ok'); }
+        catch (e) { dbg('sessionStorage: BLOCKED'); }
+        try { localStorage.getItem('x'); dbg('localStorage: ok'); }
+        catch (e) { dbg('localStorage: BLOCKED'); }
+        dbg('indexedDB: ' + (typeof indexedDB));
+        dbg('standalone: ' + ((navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)));
+
+        var reloadGate;
+        try { reloadGate = sessionStorage.getItem('ft-reloaded-after-cleanup'); }
+        catch (e) { reloadGate = null; }
+
+        var swP = ('serviceWorker' in navigator)
+          ? navigator.serviceWorker.getRegistrations().then(function (regs) {
+              hadSw = regs.length;
+              dbg('SWs found: ' + hadSw);
+              regs.forEach(function (r) { dbg('  scope: ' + (r.scope || '?')); });
+              return Promise.all(regs.map(function (r) { return r.unregister(); }));
+            }).catch(function (err) { dbg('SW cleanup error: ' + err); })
+          : (dbg('serviceWorker API: missing'), Promise.resolve());
+
+        var cacheP = ('caches' in window)
+          ? caches.keys().then(function (names) {
+              hadCache = names.length;
+              dbg('caches found: ' + hadCache + (names.length ? ' (' + names.join(', ') + ')' : ''));
+              return Promise.all(names.map(function (n) { return caches.delete(n); }));
+            }).catch(function (err) { dbg('cache cleanup error: ' + err); })
+          : (dbg('Cache API: missing'), Promise.resolve());
+
+        Promise.all([swP, cacheP]).then(function () {
+          if ((hadSw > 0 || hadCache > 0) && reloadGate !== '1') {
+            try { sessionStorage.setItem('ft-reloaded-after-cleanup', '1'); } catch (e) {}
+            dbg('Stale SW/cache found — reloading once to bypass intercept…');
+            setTimeout(function () { location.reload(); }, 100);
+            return;
+          }
+          if (reloadGate === '1') {
+            try { sessionStorage.removeItem('ft-reloaded-after-cleanup'); } catch (e) {}
+            dbg('post-cleanup reload completed.');
+          } else {
+            dbg('no stale SW/cache — loading app.');
+          }
+          loadEntry();
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Vite needs this tag to identify the build entry. In production, the
+         emit-entry-url plugin removes this tag and injects window.__FT_ENTRY__
+         at the start of <head>, so the cleanup script can gate-load it after
+         service-worker cleanup. In dev, this tag loads naturally and the
+         cleanup script bails out (no __FT_ENTRY__ defined). -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
