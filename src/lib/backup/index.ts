@@ -98,12 +98,12 @@ async function shareOrDownload(files: File[]): Promise<boolean> {
       canShare?: (data: ShareData) => boolean;
       share?: (data: ShareData) => Promise<void>;
     };
+    // Pass ONLY `files`, with no `title` or `text`. iOS Safari materialises
+    // the text/title payload as a separate text.txt attachment when the
+    // share target is Files / iCloud Drive — producing a useless third file
+    // alongside the CSV and JSON. Files-only avoids that.
     if (navAny.canShare && navAny.share && navAny.canShare({ files })) {
-      await navAny.share({
-        files,
-        title: 'FuelTracker backup',
-        text: 'Save these files to iCloud Drive to back up your fuel log.',
-      });
+      await navAny.share({ files });
       return true;
     }
   } catch (err) {

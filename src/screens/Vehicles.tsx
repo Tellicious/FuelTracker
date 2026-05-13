@@ -1,9 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
+import { DecimalInput } from '../components/DecimalInput';
 import { Modal } from '../components/Modal';
 import { db, uid } from '../db/db';
 import type { Settings, Vehicle, VehicleType } from '../db/types';
-import { currencySymbol, parseDecimalInput } from '../lib/format';
+import { currencySymbol } from '../lib/format';
 
 interface Props {
   settings: Settings;
@@ -132,23 +133,12 @@ export function VehiclesScreen({ settings }: Props) {
                 <label className="field-label">
                   Default electricity cost ({currencySymbol(settings.currency)}/kWh)
                 </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={editing.defaultElectricityCost ?? ''}
+                <DecimalInput
+                  value={editing.defaultElectricityCost}
                   placeholder={`Falls back to global (${settings.defaultElectricityCost})`}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    if (raw === '') {
-                      setEditing({ ...editing, defaultElectricityCost: null });
-                      return;
-                    }
-                    const n = parseDecimalInput(raw);
-                    setEditing({
-                      ...editing,
-                      defaultElectricityCost: Number.isFinite(n) ? n : null,
-                    });
-                  }}
+                  onChange={(n) =>
+                    setEditing({ ...editing, defaultElectricityCost: n })
+                  }
                 />
               </div>
             )}

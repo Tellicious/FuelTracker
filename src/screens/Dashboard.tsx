@@ -145,7 +145,6 @@ export function DashboardScreen({
         <KpiCard
           label="Tracked km"
           value={stats.totalTrackedKm > 0 ? fmtNumber(stats.totalTrackedKm, 0) : '—'}
-          sub="km"
           accent
         />
         <KpiCard
