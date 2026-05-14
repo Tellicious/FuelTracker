@@ -237,21 +237,14 @@
           reportError('unhandledrejection', msg, (r && r.stack) || '');
         });
 
-        // ----- SW/cache cleanup -- BLOCKS entry script load until done -----
-        // In production: __FT_ENTRY__ is injected by the emit-entry-url plugin,
-        // and we load the entry module manually after cleanup so a stale SW
-        // can't intercept the fetch.
-        // In dev: __FT_ENTRY__ is absent; Vite's own <script type="module">
-        // tag in the body handles entry loading. We still do cleanup, just
-        // without the gate.
         var entry = window.__FT_ENTRY__;
         var devMode = !entry || !entry.src;
         if (devMode) {
-          dbg('dev mode (Vite serving) — cleanup runs but entry tag is native.');
+          dbg('dev mode (Vite serving) — entry tag is native.');
         }
 
         function loadEntry() {
-          if (devMode) return; // Vite's tag handles it in dev
+          if (devMode) return;
           var s = document.createElement('script');
           s.type = 'module';
           s.src = entry.src;
@@ -271,7 +264,6 @@
           else document.addEventListener('DOMContentLoaded', inject);
         }
 
-        var hadSw = 0, hadCache = 0;
         try { sessionStorage.getItem('x'); dbg('sessionStorage: ok'); }
         catch (e) { dbg('sessionStorage: BLOCKED'); }
         try { localStorage.getItem('x'); dbg('localStorage: ok'); }
@@ -279,42 +271,37 @@
         dbg('indexedDB: ' + (typeof indexedDB));
         dbg('standalone: ' + ((navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)));
 
-        var reloadGate;
-        try { reloadGate = sessionStorage.getItem('ft-reloaded-after-cleanup'); }
-        catch (e) { reloadGate = null; }
+        // Manual recovery: open the app with ?reset=1 to wipe any
+        // registered service workers and caches. Useful if a buggy SW
+        // ever gets stuck serving stale content. On every other load
+        // the SW is left alone so offline support actually works.
+        if (location.search.indexOf('reset=1') >= 0) {
+          dbg('?reset=1 detected — unregistering SWs and clearing caches…');
+          var swReset = ('serviceWorker' in navigator)
+            ? navigator.serviceWorker.getRegistrations().then(function (regs) {
+                dbg('SWs found: ' + regs.length);
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+              }).catch(function (err) { dbg('SW reset error: ' + err); })
+            : Promise.resolve();
+          var cacheReset = ('caches' in window)
+            ? caches.keys().then(function (names) {
+                dbg('caches found: ' + names.length + (names.length ? ' (' + names.join(', ') + ')' : ''));
+                return Promise.all(names.map(function (n) { return caches.delete(n); }));
+              }).catch(function (err) { dbg('cache reset error: ' + err); })
+            : Promise.resolve();
+          Promise.all([swReset, cacheReset]).then(function () {
+            dbg('Reset complete — reloading without ?reset=1.');
+            location.replace(location.pathname);
+          });
+          return;
+        }
 
-        var swP = ('serviceWorker' in navigator)
-          ? navigator.serviceWorker.getRegistrations().then(function (regs) {
-              hadSw = regs.length;
-              dbg('SWs found: ' + hadSw);
-              regs.forEach(function (r) { dbg('  scope: ' + (r.scope || '?')); });
-              return Promise.all(regs.map(function (r) { return r.unregister(); }));
-            }).catch(function (err) { dbg('SW cleanup error: ' + err); })
-          : (dbg('serviceWorker API: missing'), Promise.resolve());
-
-        var cacheP = ('caches' in window)
-          ? caches.keys().then(function (names) {
-              hadCache = names.length;
-              dbg('caches found: ' + hadCache + (names.length ? ' (' + names.join(', ') + ')' : ''));
-              return Promise.all(names.map(function (n) { return caches.delete(n); }));
-            }).catch(function (err) { dbg('cache cleanup error: ' + err); })
-          : (dbg('Cache API: missing'), Promise.resolve());
-
-        Promise.all([swP, cacheP]).then(function () {
-          if ((hadSw > 0 || hadCache > 0) && reloadGate !== '1') {
-            try { sessionStorage.setItem('ft-reloaded-after-cleanup', '1'); } catch (e) {}
-            dbg('Stale SW/cache found — reloading once to bypass intercept…');
-            setTimeout(function () { location.reload(); }, 100);
-            return;
-          }
-          if (reloadGate === '1') {
-            try { sessionStorage.removeItem('ft-reloaded-after-cleanup'); } catch (e) {}
-            dbg('post-cleanup reload completed.');
-          } else {
-            dbg('no stale SW/cache — loading app.');
-          }
-          loadEntry();
-        });
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            dbg('SWs already registered: ' + regs.length);
+          }).catch(function () {});
+        }
+        loadEntry();
       })();
     </script>
   </head>

@@ -7,12 +7,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 // built dist/ folder portable to any host without rebuilding.
 const base = process.env.BASE_URL || './';
 
-// Service worker is opt-in (ENABLE_PWA=1) — stale SW caches are painful to
-// debug on iOS, so default builds keep the SW off and just ship the manifest.
-const pwaDisabled = process.env.ENABLE_PWA !== '1';
+const pwaDisabled = process.env.ENABLE_PWA === '0';
 
-// Stamped into index.html via the plugin below so the on-page diagnostic
-// card can show what version is live when something goes wrong.
 const buildStamp = new Date().toISOString();
 
 export default defineConfig({

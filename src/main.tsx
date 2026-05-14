@@ -72,3 +72,21 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => paintError('Bootstrap failed', err));
+
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  import('virtual:pwa-register')
+    .then(({ registerSW }) => {
+      registerSW({
+        immediate: true,
+        onRegisteredSW(swUrl) {
+          console.log('[ft] service worker registered:', swUrl);
+        },
+        onRegisterError(err) {
+          console.error('[ft] service worker registration failed:', err);
+        },
+      });
+    })
+    .catch((err) => {
+      console.log('[ft] virtual:pwa-register import failed (offline support disabled):', err);
+    });
+}
