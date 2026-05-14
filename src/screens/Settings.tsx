@@ -195,6 +195,28 @@ export function SettingsScreen({ onToast }: Props) {
         </div>
       </div>
 
+      <div className="section-title">Chart</div>
+      <div className="card">
+        <div className="field">
+          <label className="field-label">Smoothing window</label>
+          <div className="segment" style={{ alignSelf: 'flex-start' }}>
+            {[3, 5, 7, 9, 11].map((n) => (
+              <button
+                key={n}
+                className={settings.smoothingWindow === n ? 'active' : ''}
+                onClick={() => update({ smoothingWindow: n })}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <div className="input-help">
+            How many neighboring entries to average when the chart's
+            "Smooth" toggle is on. Larger = smoother but less responsive.
+          </div>
+        </div>
+      </div>
+
       <div className="section-title">Backups</div>
       <div className="card stack">
         <div>

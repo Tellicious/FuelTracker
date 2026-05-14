@@ -54,6 +54,7 @@ export interface Settings {
   lastBackupAt: string | null;
   lastBackupHash: string | null;
   themeMode: ThemeMode;
+  smoothingWindow: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -66,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lastBackupAt: null,
   lastBackupHash: null,
   themeMode: 'auto',
+  smoothingWindow: 5,
 };
 
 export const CURRENCY_SYMBOL: Record<string, string> = {

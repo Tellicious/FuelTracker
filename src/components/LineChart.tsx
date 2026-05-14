@@ -27,6 +27,7 @@ interface Props {
   onVisibleChange: (next: Record<ChartSeries, boolean>) => void;
   smoothed: boolean;
   onSmoothedChange: (next: boolean) => void;
+  smoothingWindow: number;
 }
 
 const SCALES: Scale[] = ['1M', '3M', '6M', '1Y', 'ALL', 'CUSTOM'];
@@ -204,6 +205,7 @@ export function LineChart({
   onVisibleChange,
   smoothed,
   onSmoothedChange,
+  smoothingWindow,
 }: Props) {
   const [hover, setHover] = useState<number | null>(null);
 
@@ -252,9 +254,9 @@ export function LineChart({
 
 
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const pointersRef = useRef<Map<number, { x: number }>>(new Map());
+  const pointersRef = useRef<Map<number, { x: number; pointerType: string }>>(new Map());
   const gestureRef = useRef<{
-    kind: 'pan' | 'pinch';
+    kind: 'pan' | 'pinch' | 'scrub';
     startViewport: Viewport;
     startCenterX: number;
     startPinchSpan: number;
@@ -301,20 +303,21 @@ export function LineChart({
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!viewport) return;
     const x = clientToChartX(e.clientX);
-    pointersRef.current.set(e.pointerId, { x });
+    pointersRef.current.set(e.pointerId, { x, pointerType: e.pointerType });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
 
     if (pointersRef.current.size === 1) {
+      const isTouch = e.pointerType === 'touch';
       const nearest = findNearestIndex(x);
       if (nearest != null) setHover(nearest);
       gestureRef.current = {
-        kind: 'pan',
+        kind: isTouch ? 'scrub' : 'pan',
         startViewport: { ...viewport },
         startCenterX: x,
         startPinchSpan: 0,
-        armed: false,
+        armed: isTouch,
         committed: false,
       };
     } else if (pointersRef.current.size === 2) {
@@ -336,10 +339,15 @@ export function LineChart({
     if (!gestureRef.current || !viewport) return;
 
     const x = clientToChartX(e.clientX);
-    pointersRef.current.set(e.pointerId, { x });
+    const existing = pointersRef.current.get(e.pointerId);
+    pointersRef.current.set(e.pointerId, { x, pointerType: existing?.pointerType ?? e.pointerType });
     const g = gestureRef.current;
 
-    if (g.kind === 'pan' && pointersRef.current.size === 1) {
+    if (g.kind === 'scrub' && pointersRef.current.size === 1) {
+      const nearest = findNearestIndex(x);
+      if (nearest != null) setHover(nearest);
+      e.preventDefault();
+    } else if (g.kind === 'pan' && pointersRef.current.size === 1) {
       const dx = x - g.startCenterX;
       if (!g.armed) {
         const nearest = findNearestIndex(x);
@@ -380,10 +388,10 @@ export function LineChart({
       gestureRef.current = null;
       if (wasGestureCommitted && localViewport) commitViewport(localViewport);
     } else if (pointersRef.current.size === 1) {
-
       const remaining = [...pointersRef.current.values()][0];
+      const isTouch = remaining.pointerType === 'touch';
       gestureRef.current = {
-        kind: 'pan',
+        kind: isTouch ? 'scrub' : 'pan',
         startViewport: localViewport ?? viewport!,
         startCenterX: remaining.x,
         startPinchSpan: 0,
@@ -437,16 +445,17 @@ export function LineChart({
 
   const data = useMemo(() => {
     if (!smoothed) return rawData;
-    const gas = smoothSeries(rawData.map((p) => p.gas));
-    const equiv = smoothSeries(rawData.map((p) => p.equivalent));
-    const elec = smoothSeries(rawData.map((p) => p.elec ?? null));
+    const w = Math.max(2, Math.floor(smoothingWindow));
+    const gas = smoothSeries(rawData.map((p) => p.gas), w);
+    const equiv = smoothSeries(rawData.map((p) => p.equivalent), w);
+    const elec = smoothSeries(rawData.map((p) => p.elec ?? null), w);
     return rawData.map((p, i) => ({
       date: p.date,
       gas: gas[i],
       equivalent: equiv[i],
       elec: elec[i],
     })) as ChartPoint[];
-  }, [rawData, smoothed]);
+  }, [rawData, smoothed, smoothingWindow]);
 
   const onGas = (showGas ?? true) && visible.gas;
   const onEquiv = (showEquiv ?? true) && visible.equiv;
@@ -490,6 +499,7 @@ export function LineChart({
           unitLabel={unitLabel}
           smoothed={smoothed}
           onSmoothedChange={onSmoothedChange}
+          smoothingWindow={smoothingWindow}
         />
         <div className="empty" style={{ padding: '20px 8px' }}>
           Toggle a series on to see the chart.
@@ -618,6 +628,7 @@ export function LineChart({
         unitLabel={unitLabel}
         smoothed={smoothed}
         onSmoothedChange={onSmoothedChange}
+        smoothingWindow={smoothingWindow}
       />
 
       <svg
@@ -949,6 +960,7 @@ function SeriesToggles({
   unitLabel,
   smoothed,
   onSmoothedChange,
+  smoothingWindow,
 }: {
   showGas?: boolean;
   showEquiv?: boolean;
@@ -958,6 +970,7 @@ function SeriesToggles({
   unitLabel: string;
   smoothed: boolean;
   onSmoothedChange: (next: boolean) => void;
+  smoothingWindow: number;
 }) {
   const toggle = (k: ChartSeries) => onVisibleChange({ ...visible, [k]: !visible[k] });
   const Pill = ({
@@ -1006,11 +1019,11 @@ function SeriesToggles({
         onClick={() => onSmoothedChange(!smoothed)}
         className="chart-pill chart-pill-smooth"
         aria-pressed={smoothed}
-        style={{ opacity: smoothed ? 1 : 0.45 }}
+        style={{ opacity: smoothed ? 1 : 0.45, marginLeft: 'auto' }}
       >
         <span className="chart-pill-text">
           <span className="chart-pill-label">Smooth</span>
-          <span className="chart-pill-sub">{smoothed ? 'on' : 'off'}</span>
+          <span className="chart-pill-sub">{smoothed ? `n=${smoothingWindow}` : 'off'}</span>
         </span>
       </button>
     </div>

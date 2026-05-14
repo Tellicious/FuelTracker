@@ -122,12 +122,13 @@ export function AddEntryScreen({
 
   useEffect(() => {
     if (editingId) return;
-    if (activeVehicleId && activeVehicleId !== form.vehicleId) {
-      setForm((f) => ({ ...f, vehicleId: activeVehicleId }));
-    } else if (!activeVehicleId && vehicles.length > 0 && !form.vehicleId) {
-      setForm((f) => ({ ...f, vehicleId: vehicles[0].id }));
-    }
-  }, [activeVehicleId, vehicles, editingId, form.vehicleId]);
+    setForm((f) => {
+      if (f.vehicleId) return f;
+      if (activeVehicleId) return { ...f, vehicleId: activeVehicleId };
+      if (vehicles.length > 0) return { ...f, vehicleId: vehicles[0].id };
+      return f;
+    });
+  }, [activeVehicleId, vehicles, editingId]);
 
 
 

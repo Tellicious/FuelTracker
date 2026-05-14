@@ -637,11 +637,15 @@ textarea.error {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  /* Minimal horizontal padding so the SVG plot area uses as much of the
-     screen width as possible. The SVG itself reserves padding internally
-     for tick labels (pad.l/pad.r inside the chart). */
   padding: 12px 2px 12px;
   margin-top: 12px;
+}
+
+.chart-wrap svg {
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Clickable series-toggle pills that double as the legend.

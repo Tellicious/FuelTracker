@@ -61,10 +61,11 @@ export function VehiclesScreen({ settings }: Props) {
 
   return (
     <div className="screen">
-      <div className="header">
-        <h1>Vehicles</h1>
+      <h1 className="screen-title">Vehicles</h1>
+
+      <div style={{ marginBottom: 16 }}>
         <button className="btn btn-primary" onClick={startCreate}>
-          + New
+          + New vehicle
         </button>
       </div>
 

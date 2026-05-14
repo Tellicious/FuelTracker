@@ -248,6 +248,7 @@ export function DashboardScreen({
             onVisibleChange={setVisible}
             smoothed={smoothed}
             onSmoothedChange={setSmoothed}
+            smoothingWindow={settings.smoothingWindow}
           />
         </>
       )}

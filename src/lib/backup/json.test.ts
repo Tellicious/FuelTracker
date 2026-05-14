@@ -27,6 +27,7 @@ describe('JSON config round-trip', () => {
       defaultElectricityCost: 0.25,
       backupCadence: 'weekly',
       themeMode: 'dark',
+      smoothingWindow: 5,
       schemaVersion: 2,
       lastBackupAt: '2024-05-01T00:00:00.000Z',
       lastBackupHash: 'deadbeef',
