@@ -38,8 +38,8 @@ describe('JSON config round-trip', () => {
     expect(parsed.vehicles[1].type).toBe('ev');
     expect(parsed.settings.currency).toBe('GBP');
     expect(parsed.settings.themeMode).toBe('dark');
-    // backup tracking is scrubbed on export so it doesn't follow data
-    // across devices
+
+
     expect(parsed.settings.lastBackupAt).toBeNull();
     expect(parsed.settings.lastBackupHash).toBeNull();
   });

@@ -5,33 +5,16 @@ interface Props {
   onChange: (t: Tab) => void;
 }
 
-/*
- * Tab-bar icons. All five share the same visual language: 24×24 viewBox,
- * stroke-only (no fills), uniform stroke-width via CSS. This replaces the
- * earlier unicode glyphs, where the gear ⚙ was rendered as a color emoji by
- * iOS while the others (◐ ≡ ◇) stayed as monochrome geometric symbols —
- * which is what made Settings visually stick out.
- *
- * Icon choices:
- *   - Dashboard → speedometer / gauge (semicircle + needle)
- *       on-theme for a fuel-tracking app; reads as "instrument panel"
- *   - Records   → bullet list (dots + lines)
- *       reads as "entries" / "history" without colliding with a hamburger nav
- *   - Add       → plus, kept as the centerpiece pill
- *   - Vehicles  → side-profile car silhouette with two wheels
- *   - Settings  → gear/cogwheel as line art (NOT the ⚙ emoji)
- */
-
 function IconDashboard() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      {/* Semicircular gauge */}
+      {}
       <path d="M3.5 15 A8.5 8.5 0 0 1 20.5 15" />
-      {/* Needle from pivot, pointing up-right */}
+      {}
       <path d="M12 15 L16 9" />
-      {/* Pivot — filled so it reads as the dial center */}
+      {}
       <circle cx="12" cy="15" r="1.4" fill="currentColor" stroke="none" />
-      {/* Two minor tick marks for "speedometer" feel */}
+      {}
       <path d="M5.5 11.5 L6.5 12" />
       <path d="M18.5 11.5 L17.5 12" />
     </svg>
@@ -61,15 +44,15 @@ function IconAdd() {
 }
 
 function IconVehicles() {
-  // Side-profile car drawn as ONE continuous outline (no internal seams).
-  // The path traces front-bumper round → hood → A-pillar → roof → C-pillar →
-  // trunk → back-bumper round → right side of underbody, then jumps (M) to
-  // draw the middle underbody segment between the two wheels. The wheels
-  // themselves are drawn as separate circles that visually "close" the
-  // wheel-arch gaps in the underbody.
-  //
-  // viewBox occupancy: 20w × 14h out of 24×24 → ~58% area, roughly matching
-  // the visual weight of the other tab icons.
+
+
+
+
+
+
+
+
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="
@@ -98,11 +81,11 @@ function IconVehicles() {
 }
 
 function IconSettings() {
-  // Toothed cog. 16 vertices around (12,12), alternating between an outer
-  // radius (tooth tip, r=9) and an inner radius (gap between teeth, r=6.5),
-  // every 22.5°. Combined with the inner axle-hole circle, this reads as a
-  // gear (not a sun, which was the problem with the previous radial-lines
-  // version). Coordinates pre-computed from r·cos(θ), r·sin(θ).
+
+
+
+
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M 12 3 L 14.49 5.99 L 18.36 5.64 L 18.01 9.51 L 21 12 L 18.01 14.49 L 18.36 18.36 L 14.49 18.01 L 12 21 L 9.51 18.01 L 5.64 18.36 L 5.99 14.49 L 3 12 L 5.99 9.51 L 5.64 5.64 L 9.51 5.99 Z" />
@@ -111,6 +94,11 @@ function IconSettings() {
   );
 }
 
+// Bottom navigation bar — five icon buttons (Dashboard / Records / Add /
+// Vehicles / Settings) with the centre Add button raised and tinted in
+// the brand accent colour. Pinned to the bottom of the viewport with
+// safe-area-inset padding so it sits above the home-bar gesture area on
+// iPhones without notch-less display.
 export function TabBar({ active, onChange }: Props) {
   return (
     <nav className="tabbar" role="navigation">

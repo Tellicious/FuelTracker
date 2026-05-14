@@ -11,7 +11,7 @@ function isIOS(): boolean {
 
 function isStandalone(): boolean {
   try {
-    // iOS Safari standalone
+
     if ((navigator as unknown as { standalone?: boolean }).standalone === true) {
       return true;
     }
@@ -21,6 +21,10 @@ function isStandalone(): boolean {
   }
 }
 
+// One-time iOS install hint shown to Safari users who haven't yet added
+// the app to their home screen. On Chrome, listens for the beforeinstall-
+// prompt event and surfaces a native install button instead. Dismissal is
+// persisted to localStorage so the user only sees it once.
 export function InstallPrompt() {
   const [open, setOpen] = useState(false);
 

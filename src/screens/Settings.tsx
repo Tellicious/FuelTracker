@@ -27,6 +27,10 @@ interface Props {
   onToast: (msg: string) => void;
 }
 
+// Settings screen — global preferences (theme, currency, consumption unit,
+// default electricity cost) plus backup actions (export CSV / export JSON /
+// import a previously-exported file). All settings live in a single 'global'
+// row in the Dexie settings table.
 export function SettingsScreen({ onToast }: Props) {
   const settings = useLiveQuery(() => getSettings(), []);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -36,7 +40,7 @@ export function SettingsScreen({ onToast }: Props) {
 
   const update = (patch: Partial<Settings>) => db.settings.update('global', patch);
 
-  /** Mark a successful export by stamping the last-backup metadata. */
+
   const stampBackup = async () => {
     const payload = await buildPayload();
     const hash = await payloadHash(payload);

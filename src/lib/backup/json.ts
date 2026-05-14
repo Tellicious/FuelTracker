@@ -1,9 +1,5 @@
 import { SCHEMA_VERSION, type Settings, type Vehicle } from '../../db/types';
 
-/**
- * JSON format for vehicles + settings. Everything that isn't fuel-up data
- * goes here — the CSV stays a flat, Excel-friendly table.
- */
 export interface ConfigJson {
   schemaVersion: number;
   exportedAt: string;
@@ -11,8 +7,9 @@ export interface ConfigJson {
   settings: Settings;
 }
 
-/** Serialize the config payload. Backup-tracking fields are scrubbed so
- *  they don't follow data across devices. */
+// Serialize vehicles + settings to a pretty-printed JSON string for the
+// config backup file. Strips per-device backup metadata (lastBackupAt,
+// lastBackupHash) on its way out so the file is portable between phones.
 export function configToJson(vehicles: Vehicle[], settings: Settings): string {
   const cleanSettings: Settings = {
     ...settings,
@@ -28,7 +25,10 @@ export function configToJson(vehicles: Vehicle[], settings: Settings): string {
   return JSON.stringify(cfg, null, 2);
 }
 
-/** Parse and validate a config JSON file. Throws on missing required fields. */
+// Parse + validate a config JSON file. Throws on syntactic JSON errors and
+// on structural problems (missing schemaVersion / vehicles / settings).
+// Schema-version compatibility is enforced at a higher level in
+// importConfigJson.
 export function jsonToConfig(text: string): ConfigJson {
   let parsed: unknown;
   try {

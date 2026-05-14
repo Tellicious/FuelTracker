@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
-  /** Optional label shown above the error message (e.g. which screen). */
+
   label?: string;
 }
 
@@ -10,13 +10,11 @@ interface State {
   error: Error | null;
 }
 
-/**
- * Catches render-phase errors from descendants and displays them inline
- * instead of letting React unmount the whole tree. Without this, a single
- * bug in (say) the chart would leave the user on a blank dark screen with
- * only the generic top-level "Uncaught error / Script error" reporter to
- * tell them what happened.
- */
+// React error boundary that catches render-time exceptions in its subtree
+// and shows an inline error card (with the error message + stack) instead
+// of unmounting the whole app. Wrapped per-screen so one screen's crash
+// doesn't take down navigation. The Dismiss button re-renders the
+// children, useful if the underlying state was already corrected.
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
@@ -25,7 +23,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // eslint-disable-next-line no-console
+
     console.error('[ErrorBoundary]', this.props.label ?? '', error, info);
   }
 

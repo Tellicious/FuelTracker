@@ -4,6 +4,9 @@ interface Props {
   onDismiss: () => void;
 }
 
+// Yellow banner that appears at the top of the dashboard when a backup is
+// overdue. Shows how many days since the last backup, with a primary
+// "Back up now" action and a secondary dismiss (snoozes for ~24h).
 export function BackupBanner({ daysAgo, onBackup, onDismiss }: Props) {
   const text =
     daysAgo == null

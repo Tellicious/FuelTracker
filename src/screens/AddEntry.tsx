@@ -5,10 +5,6 @@ import type { FuelUp, Settings, Vehicle, VehicleType } from '../db/types';
 import { reconcile, type DeriveField, type DeriveValues } from '../lib/derive';
 import { currencySymbol, fmtMoney, fromInputDateTime, parseDecimalInput, toInputDateTime } from '../lib/format';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 interface Props {
   settings: Settings;
   vehicles: Vehicle[];
@@ -19,22 +15,17 @@ interface Props {
   onCancel: () => void;
 }
 
-/**
- * Form state. `amount` and `unitPrice` are vehicle-type-neutral — they map to
- * gasLiters/gasPricePerLiter for ICE/HEV/PHEV and to kWhCharged/kWhPrice for
- * EV at save time.
- */
 interface FormState {
   vehicleId: string;
-  date: string; // ISO
+  date: string;
   odometer: string;
   amount: string;
   unitPrice: string;
   totalCost: string;
   partial: boolean;
-  /** Marks the previous fuel-up as not logged → interval excluded from stats. */
+
   missed: boolean;
-  // PHEV-only: electricity stats since the previous entry
+
   phevKwhPer100Km: string;
   phevKwhPrice: string;
   notes: string;
@@ -62,10 +53,14 @@ function toNumOrNull(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
+// The "new fuel-up / edit existing entry" form. Vehicle-type-aware: shows
+// gas cost fields for ICE/HEV/PHEV, kWh fields for EVs, plus an optional
+// PHEV electricity-since-last-full section for PHEVs. The cost triplet
+// (amount × unitPrice = totalCost) auto-derives via lib/derive whenever
+// two of the three are filled in. Form state is held as strings so users
+// can type partial / comma-decimal values without the input being clobbered
+// on every keystroke. On save, the entry is persisted via Dexie and the
+// user is sent back to the Records screen.
 export function AddEntryScreen({
   settings,
   vehicles,
@@ -92,9 +87,9 @@ export function AddEntryScreen({
   const isEv = vehicleType === 'ev';
   const isPhev = vehicleType === 'phev';
 
-  // -------------------------------------------------------------------------
-  // Hydration: load values from an existing entry when editing
-  // -------------------------------------------------------------------------
+
+
+
   useEffect(() => {
     if (!editingEntry) return;
     const editVehicle = vehicles.find((v) => v.id === editingEntry.vehicleId);
@@ -122,9 +117,9 @@ export function AddEntryScreen({
     setLastTouched([]);
   }, [editingEntry, vehicles, settings.defaultElectricityCost]);
 
-  // -------------------------------------------------------------------------
-  // Sync form.vehicleId with the app-level active vehicle (cross-tab)
-  // -------------------------------------------------------------------------
+
+
+
   useEffect(() => {
     if (editingId) return;
     if (activeVehicleId && activeVehicleId !== form.vehicleId) {
@@ -134,9 +129,9 @@ export function AddEntryScreen({
     }
   }, [activeVehicleId, vehicles, editingId, form.vehicleId]);
 
-  // -------------------------------------------------------------------------
-  // Look up the previous odometer reading for the warning hint
-  // -------------------------------------------------------------------------
+
+
+
   useEffect(() => {
     if (!form.vehicleId) {
       setPreviousOdometer(null);
@@ -155,15 +150,15 @@ export function AddEntryScreen({
       });
   }, [form.vehicleId, form.date, editingId]);
 
-  // -------------------------------------------------------------------------
-  // Pre-fill the electricity unit price from the vehicle's own default (or
-  // the global setting as fallback). EV uses `unitPrice` since the whole
-  // entry is a charge event; PHEV uses `phevKwhPrice` (the dedicated since-
-  // last-full field). We only overwrite when the field is empty so a user
-  // who has typed a custom value isn't clobbered by a vehicle switch.
-  // -------------------------------------------------------------------------
+
+
+
+
+
+
+
   useEffect(() => {
-    if (editingId) return; // editing flow has its own hydration below
+    if (editingId) return;
     const v = vehicles.find((x) => x.id === form.vehicleId);
     if (!v) return;
     if (v.type !== 'ev' && v.type !== 'phev') return;
@@ -179,9 +174,9 @@ export function AddEntryScreen({
     });
   }, [form.vehicleId, vehicles, settings.defaultElectricityCost, editingId]);
 
-  // -------------------------------------------------------------------------
-  // 2-of-3 cost reconciliation for non-EV vehicles
-  // -------------------------------------------------------------------------
+
+
+
   const reconciled = useMemo<ReturnType<typeof reconcile>>(() => {
     if (isEv) return null;
     const values: DeriveValues = {
@@ -214,17 +209,17 @@ export function AddEntryScreen({
     setLastTouched((lt) => [field, ...lt.filter((x) => x !== field)].slice(0, 3));
   };
 
-  // -------------------------------------------------------------------------
-  // EV: simple amount × unitPrice (no 2-of-3, just multiplication)
-  // -------------------------------------------------------------------------
+
+
+
   const evAmount = toNumOrNull(form.amount);
   const evUnitPrice = toNumOrNull(form.unitPrice);
   const evTotalCost =
     evAmount != null && evUnitPrice != null ? evAmount * evUnitPrice : null;
 
-  // -------------------------------------------------------------------------
-  // Validation
-  // -------------------------------------------------------------------------
+
+
+
   const odometerNum = toNumOrNull(form.odometer);
   const odometerOk = odometerNum != null && odometerNum >= 0;
   const odometerWarn =
@@ -247,9 +242,9 @@ export function AddEntryScreen({
     totalCost: showErrors && !isEv && !reconciled && !form.totalCost,
   };
 
-  // -------------------------------------------------------------------------
-  // Save
-  // -------------------------------------------------------------------------
+
+
+
   const save = async () => {
     if (!canSave) {
       setShowErrors(true);
@@ -262,7 +257,7 @@ export function AddEntryScreen({
       if (!ok) return;
     }
 
-    // Map vehicle-type-neutral form values to the right DB fields.
+
     const entry: FuelUp = {
       id: editingId ?? uid(),
       vehicleId: form.vehicleId,
@@ -290,9 +285,9 @@ export function AddEntryScreen({
     onSaved();
   };
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
+
+
+
   if (vehicles.length === 0) {
     return (
       <div className="screen">
@@ -398,10 +393,8 @@ export function AddEntryScreen({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Subcomponents
-// ---------------------------------------------------------------------------
-
+// Vehicle selector for the form's top row. Single-select segmented
+// control rendered as a horizontal scroll if there are many vehicles.
 function VehiclePicker({
   vehicles,
   value,
@@ -425,6 +418,8 @@ function VehiclePicker({
   );
 }
 
+// Native datetime-local input wrapper. The "-webkit-appearance: none" in
+// styles.css stops iOS from sizing the input wider than its parent.
 function DateTimePicker({
   value,
   onChange,
@@ -444,6 +439,10 @@ function DateTimePicker({
   );
 }
 
+// Odometer reading row. Shows the current input next to a read-only
+// reference field with the previous fill-up's odometer for that vehicle.
+// Surfaces both a hard error (empty) and a soft warning (lower than the
+// previous reading, which probably means a typo).
 function OdometerField({
   value,
   onChange,
@@ -458,20 +457,28 @@ function OdometerField({
   showWarning: boolean;
 }) {
   return (
-    <div className="field">
-      <label className="field-label">Odometer (km)</label>
-      <div className="field-row">
-        <input
-          type="text"
-          inputMode="numeric"
-          step="1"
-          min="0"
-          className={showError ? 'error' : ''}
-          placeholder={previous != null ? `Previous: ${previous}` : '0'}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-        <span className="field-suffix">km</span>
+    <div>
+      <div className="field-grid field-grid-2">
+        <div className="field">
+          <label className="field-label">Odometer (km)</label>
+          <div className="field-row">
+            <input
+              type="text"
+              inputMode="numeric"
+              className={showError ? 'error' : ''}
+              placeholder="0"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+            />
+            <span className="field-suffix">km</span>
+          </div>
+        </div>
+        <div className="field">
+          <label className="field-label">Last odometer</label>
+          <div className="field-readonly">
+            {previous != null ? `${previous.toLocaleString()} km` : '—'}
+          </div>
+        </div>
       </div>
       {showError && <div className="field-error">Enter the current odometer reading.</div>}
       {showWarning && (
@@ -483,6 +490,9 @@ function OdometerField({
   );
 }
 
+// EV-only cost section: kWh charged + price-per-kWh, with the total cost
+// computed on the fly for display. Vehicle's defaultElectricityCost (or
+// the global fallback) seeds the price-per-kWh field on a fresh entry.
 function EvChargingSection({
   form,
   onChange,
@@ -540,6 +550,9 @@ function EvChargingSection({
   );
 }
 
+// Gas cost section: total / liters / price-per-liter in a 3-column grid.
+// 2-of-3 auto-derivation: whenever any two are filled the third is
+// computed and shown with a dashed border to indicate it was derived.
 function GasCostSection({
   displayValue,
   onChange,
@@ -557,33 +570,35 @@ function GasCostSection({
   return (
     <>
       <div className="section-title">Fuel cost · enter any two</div>
-      <CostInput
-        label="Total cost"
-        suffix={sym}
-        step="0.01"
-        derived={derivedField === 'totalCost'}
-        error={errors.totalCost}
-        value={displayValue('totalCost')}
-        onChange={(v) => onChange('totalCost', v)}
-      />
-      <CostInput
-        label="Liters"
-        suffix="l"
-        step="0.01"
-        derived={derivedField === 'amount'}
-        error={errors.amount}
-        value={displayValue('amount')}
-        onChange={(v) => onChange('amount', v)}
-      />
-      <CostInput
-        label="Price per liter"
-        suffix={`${sym}/l`}
-        step="0.001"
-        derived={derivedField === 'unitPrice'}
-        error={errors.unitPrice}
-        value={displayValue('unitPrice')}
-        onChange={(v) => onChange('unitPrice', v)}
-      />
+      <div className="field-grid field-grid-3">
+        <CostInput
+          label="Total cost"
+          suffix={sym}
+          step="0.01"
+          derived={derivedField === 'totalCost'}
+          error={errors.totalCost}
+          value={displayValue('totalCost')}
+          onChange={(v) => onChange('totalCost', v)}
+        />
+        <CostInput
+          label="Liters"
+          suffix="l"
+          step="0.01"
+          derived={derivedField === 'amount'}
+          error={errors.amount}
+          value={displayValue('amount')}
+          onChange={(v) => onChange('amount', v)}
+        />
+        <CostInput
+          label="Price / l"
+          suffix={`${sym}/l`}
+          step="0.001"
+          derived={derivedField === 'unitPrice'}
+          error={errors.unitPrice}
+          value={displayValue('unitPrice')}
+          onChange={(v) => onChange('unitPrice', v)}
+        />
+      </div>
       {!showHelpRow && (
         <div className="field-error" style={{ marginLeft: 4 }}>
           Enter at least two of the three fields above.
@@ -598,6 +613,9 @@ function GasCostSection({
   );
 }
 
+// One labeled decimal input with a suffix tag for the unit. Visually
+// marks "derived" fields with a dashed border so the user can tell at
+// a glance which value is being computed for them.
 function CostInput({
   label,
   suffix,
@@ -633,6 +651,11 @@ function CostInput({
   );
 }
 
+// PHEV-only optional section for entering electricity usage SINCE the
+// previous full fill-up (read off the car's trip computer that's reset at
+// every full). Lets the dashboard treat electricity costs as part of the
+// total cost per km even though the user doesn't log charging events
+// individually for PHEVs.
 function PhevElectricitySection({
   form,
   onChange,
@@ -680,6 +703,11 @@ function PhevElectricitySection({
   );
 }
 
+// Two boolean switches that affect how the entry is treated in stats:
+// `partial` means the tank wasn't filled to full (this fuel-up rolls
+// into the next full one's interval), `missed` excludes this entry's
+// entire interval from stats (use it for the entry AFTER a missed
+// fill-up so the suspect distance isn't counted).
 function PartialAndMissedToggles({
   partial,
   missed,

@@ -22,14 +22,20 @@ interface ColumnDef {
   unitLine: string;
 }
 
+// Dashboard screen. Shows three top-line KPIs (Tracked km / Avg cost-per-km
+// / Last cost-per-km) and a consumption matrix beneath them (gas km/l,
+// electricity kWh/100km, equivalent km/l × last / average / best). Below
+// the numbers, the LineChart visualises consumption over time with
+// pan/pinch + a smoothing toggle. Empty state shown when there are fewer
+// than two full fill-ups (no completed intervals yet).
 export function DashboardScreen({
   settings,
   vehicles,
   activeVehicleId,
   onActiveVehicleChange,
 }: Props) {
-  // Default to ALL so a newly-loaded vehicle shows its full history. Resets
-  // back to ALL whenever the user switches to a different vehicle.
+
+
   const [scale, setScale] = useState<Scale>('ALL');
   const [customFrom, setCustomFrom] = useState<string | null>(null);
   const [customTo, setCustomTo] = useState<string | null>(null);
@@ -40,12 +46,12 @@ export function DashboardScreen({
     setCustomTo(null);
   }, [activeVehicleId]);
 
-  // Per-series visibility, controlled from the chart legend toggles.
   const [visible, setVisible] = useState<Record<ChartSeries, boolean>>({
     gas: true,
     equiv: true,
     elec: true,
   });
+  const [smoothed, setSmoothed] = useState(false);
 
   const entries =
     useLiveQuery<FuelUp[]>(
@@ -61,17 +67,17 @@ export function DashboardScreen({
   const unitLabel = displayUnitLabel(settings.consumptionUnit);
   const stats = useMemo(() => computeDashboard(entries, vehicleType), [entries, vehicleType]);
 
-  // Column visibility per vehicle type:
-  //   ICE / HEV (hybrid): gas only — HEVs don't separately pay for charging
-  //   PHEV:               all three
-  //   EV:                 electricity only
-  // (Computed unconditionally so the chartPoints useMemo below has stable deps.)
+
+
+
+
+
   const showGas = vehicleType === 'ice' || vehicleType === 'hybrid' || vehicleType === 'phev';
   const showElec = vehicleType === 'phev' || vehicleType === 'ev';
   const showEquiv = vehicleType === 'phev';
 
-  // IMPORTANT: this useMemo must be declared before any conditional return,
-  // otherwise React's hook ordering breaks between renders (error #310).
+
+
   const chartPoints: ChartPoint[] = useMemo(
     () =>
       stats.intervals.map((iv) => ({
@@ -120,7 +126,7 @@ export function DashboardScreen({
       if (row === 'avg') return fmtKwh(stats.avgKWhPer100Km);
       return fmtKwh(stats.bestKWhPer100Km);
     }
-    // equiv
+
     if (row === 'last') return fmtConsumption(stats.lastEquivalentKmPerL);
     if (row === 'avg') return fmtConsumption(stats.avgEquivalentKmPerL);
     return fmtConsumption(stats.bestEquivalentKmPerL);
@@ -140,7 +146,7 @@ export function DashboardScreen({
 
       <div style={{ height: 12 }} />
 
-      {/* Top row: Tracked km / Avg cost/km / Last cost/km */}
+      {}
       <div className="kpi-grid">
         <KpiCard
           label="Tracked km"
@@ -165,7 +171,7 @@ export function DashboardScreen({
         />
       </div>
 
-      {/* Consumption columns — one card per family, stacked Last/Avg/Best */}
+      {}
       {columns.length > 0 && (
         <div
           className="cons-grid"
@@ -195,10 +201,7 @@ export function DashboardScreen({
         </div>
       )}
 
-      {/* Best date footnote — uses the metric most relevant to the vehicle type:
-          - PHEV: best equivalent km/l (the unified cost-per-distance metric)
-          - ICE/HEV: best km/l (equals best equivalent for these — single fuel)
-          - EV: best (lowest) kWh/100km */}
+      {}
       {(() => {
         if (vehicleType === 'ev') {
           return stats.bestKWhPer100KmDate ? (
@@ -214,7 +217,7 @@ export function DashboardScreen({
             </div>
           ) : null;
         }
-        // ICE / HEV — equivalent === gas km/l, so either date works; show equiv date.
+
         const d = stats.bestEquivalentKmPerLDate ?? stats.bestKmPerLDate;
         return d ? (
           <div className="input-help" style={{ marginTop: 8, marginLeft: 4 }}>
@@ -223,7 +226,7 @@ export function DashboardScreen({
         ) : null;
       })()}
 
-      {/* Chart */}
+      {}
       {chartPoints.length > 0 && (
         <>
           <div className="section-title">Consumption over time</div>
@@ -243,6 +246,8 @@ export function DashboardScreen({
             showElec={showElec}
             visible={visible}
             onVisibleChange={setVisible}
+            smoothed={smoothed}
+            onSmoothedChange={setSmoothed}
           />
         </>
       )}

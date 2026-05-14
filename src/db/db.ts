@@ -1,18 +1,9 @@
 import Dexie, { type Table } from 'dexie';
 import { DEFAULT_SETTINGS, type FuelUp, type Settings, type Vehicle } from './types';
 
-/**
- * Schema history:
- *
- *   v1: original
- *     - fuelups.liters / .pricePerLiter were dual-purpose (gas L for ICE/HEV/PHEV,
- *       kWh for EV), .missed flag synthesized "estimated" intervals,
- *       .avgElectricityConsumption / .avgElectricityCost for PHEV.
- *
- *   v2: cleaner field names
- *     - split liters/pricePerLiter into separate gas* and kWh* pairs by
- *       vehicle type, drop missed, rename avgElectricity* to phevKwh*.
- */
+// Shape of the v1 fuel-up row. Pre-migration the schema lumped both gas
+// liters and EV kWh into a single `liters`/`pricePerLiter` pair — the v2
+// migration splits them apart based on the vehicle's type.
 interface LegacyFuelUp {
   id: string;
   vehicleId: string;
@@ -28,6 +19,14 @@ interface LegacyFuelUp {
   notes: string | null;
 }
 
+// Dexie wrapper around the IndexedDB store. Three tables: `vehicles` (one
+// row per car), `fuelups` (one row per fill-up / charge event), `settings`
+// (one global row keyed 'global'). The v1→v2 upgrade splits the legacy
+// liters/pricePerLiter pair into vehicle-type-specific columns: for EVs
+// they become kWhCharged/kWhPrice, for everything else gasLiters/
+// gasPricePerLiter. Existing PHEV electricity-since-last-full columns
+// (`phevKwhPer100Km`, `phevKwhPrice`) are populated from their legacy
+// names, and the `missed` flag is defaulted to false where absent.
 export class FuelTrackerDB extends Dexie {
   vehicles!: Table<Vehicle, string>;
   fuelups!: Table<FuelUp, string>;
@@ -42,7 +41,7 @@ export class FuelTrackerDB extends Dexie {
       settings: 'id',
     });
 
-    // v2: rename fields. Indexes unchanged.
+
     this.version(2)
       .stores({
         vehicles: 'id, name, type, createdAt',
@@ -50,8 +49,6 @@ export class FuelTrackerDB extends Dexie {
         settings: 'id',
       })
       .upgrade(async (tx) => {
-        // Build a vehicleId → type lookup so we know how to interpret the
-        // old dual-purpose liters/pricePerLiter fields.
         const allVehicles = await tx.table('vehicles').toArray() as Vehicle[];
         const typeByVehicleId = new Map(allVehicles.map((v) => [v.id, v.type]));
 
@@ -75,11 +72,8 @@ export class FuelTrackerDB extends Dexie {
             raw.phevKwhPer100Km = raw.avgElectricityConsumption ?? null;
             raw.phevKwhPrice = raw.avgElectricityCost ?? null;
 
-            // `missed` is preserved (it marks intervals with unlogged fills
-            // and excludes them from stats — see lib/stats.ts).
             raw.missed = raw.missed ?? false;
 
-            // Strip legacy column names
             delete raw.liters;
             delete raw.pricePerLiter;
             delete raw.avgElectricityConsumption;
@@ -91,9 +85,9 @@ export class FuelTrackerDB extends Dexie {
 
 export const db = new FuelTrackerDB();
 
-// Ensure singleton settings row exists. Performs a WRITE if missing —
-// callers must invoke this OUTSIDE a useLiveQuery callback (Dexie runs
-// live-query callbacks in a read-only transaction context).
+// Insert the global settings row if it's missing, returning it either way.
+// Called once at app boot to make sure the rest of the app can read
+// settings without nullability concerns.
 export async function initializeSettings(): Promise<Settings> {
   const existing = await db.settings.get('global');
   if (existing) return existing;
@@ -101,20 +95,19 @@ export async function initializeSettings(): Promise<Settings> {
   return DEFAULT_SETTINGS;
 }
 
-// Read-only settings fetch — safe inside useLiveQuery callbacks.
-// Falls back to DEFAULT_SETTINGS if the row hasn't been initialized yet, and
-// merges in defaults for any new fields that older records may be missing.
+// Read the global settings row, merging with DEFAULT_SETTINGS so any
+// recently-added fields are populated even on an old DB that predates them.
 export async function getSettings(): Promise<Settings> {
   const existing = await db.settings.get('global');
   if (!existing) return DEFAULT_SETTINGS;
   return { ...DEFAULT_SETTINGS, ...existing };
 }
 
-// Back-compat alias: kept for code paths that already run outside liveQuery
-// (e.g. buildPayload). Equivalent to initializeSettings.
 export const ensureSettings = initializeSettings;
 
+// Generate a globally-unique ID using the browser's crypto API. Used for
+// all primary keys (vehicles, fuelups). Modern Safari/Chrome guarantee
+// uniqueness via UUID v4.
 export function uid(): string {
-  // crypto.randomUUID is available in iOS Safari 15.4+ and all modern browsers.
   return crypto.randomUUID();
 }

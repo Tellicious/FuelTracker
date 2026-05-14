@@ -1,10 +1,9 @@
 import type { ThemeMode } from '../db/types';
 
-/**
- * Applies the chosen theme to the document root.
- * - 'auto' removes the attribute and lets prefers-color-scheme decide
- * - 'light' / 'dark' set the attribute explicitly, overriding the OS preference
- */
+// Apply the user's chosen theme (light / dark / auto) to the live DOM by
+// setting (or removing) the data-theme attribute on the root html element.
+// Also keeps the iOS status-bar tint (<meta name="theme-color">) in sync
+// so the system chrome matches the app's background colour.
 export function applyThemeFromSettings(mode: ThemeMode): void {
   const root = document.documentElement;
   if (mode === 'auto') {
@@ -12,7 +11,7 @@ export function applyThemeFromSettings(mode: ThemeMode): void {
   } else {
     root.setAttribute('data-theme', mode);
   }
-  // Sync the theme-color meta tag so the iOS status bar tint follows the theme.
+
   const themeColor = resolveThemeColor(mode);
   let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (!meta) {
@@ -23,10 +22,13 @@ export function applyThemeFromSettings(mode: ThemeMode): void {
   meta.content = themeColor;
 }
 
+// Resolve the concrete colour string for the iOS status-bar tint. In auto
+// mode, queries the system preference via matchMedia — falls back to dark
+// in non-browser contexts (SSR, tests).
 function resolveThemeColor(mode: ThemeMode): string {
   if (mode === 'light') return '#f6faf7';
   if (mode === 'dark') return '#0f1410';
-  // auto
+
   const prefersLight =
     typeof window !== 'undefined' &&
     window.matchMedia &&
@@ -34,12 +36,11 @@ function resolveThemeColor(mode: ThemeMode): string {
   return prefersLight ? '#f6faf7' : '#0f1410';
 }
 
-/**
- * Listens for OS-level theme changes and updates the theme-color meta tag
- * when the user has chosen 'auto'. Idempotent — calling it multiple times
- * adds only one listener.
- */
 let systemWatcherInstalled = false;
+// Install a one-time listener on the system colour-scheme media query so
+// that when the user is in "auto" mode AND the OS flips dark↔light, the
+// theme-color meta tag updates immediately. No-ops if the watcher is
+// already installed (idempotent) or matchMedia isn't available.
 export function watchSystemTheme(): void {
   if (systemWatcherInstalled || typeof window === 'undefined' || !window.matchMedia) return;
   systemWatcherInstalled = true;
@@ -50,5 +51,5 @@ export function watchSystemTheme(): void {
     }
   };
   if (mq.addEventListener) mq.addEventListener('change', handler);
-  else mq.addListener(handler); // Safari < 14
+  else mq.addListener(handler);
 }

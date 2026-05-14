@@ -1,19 +1,4 @@
-/**
- * Two-of-three reconciliation for the cost-entry form.
- *
- * The form has three numeric inputs:
- *   - `amount`     — physical quantity purchased: litres of gas, or kWh charged
- *   - `unitPrice`  — price per unit: €/l, or €/kWh
- *   - `totalCost`  — total paid: €
- *
- * They're related by `totalCost = amount × unitPrice`. The user is expected to
- * fill any two; we derive the third. If they fill all three (e.g. overwriting
- * a previously-derived value), we re-derive whichever was least-recently
- * touched.
- *
- * These names are deliberately vehicle-type-agnostic — the same logic works
- * for both gas refuelling and EV charging.
- */
+
 
 export type DeriveField = 'amount' | 'unitPrice' | 'totalCost';
 
@@ -27,17 +12,22 @@ export interface DeriveResult {
   amount: number;
   unitPrice: number;
   totalCost: number;
-  /** Which field was computed (vs. taken straight from input). */
+
   derivedField: DeriveField;
 }
 
 const ALL_FIELDS: DeriveField[] = ['amount', 'unitPrice', 'totalCost'];
 
+// Round to a fixed number of decimal places. Used to keep derived values
+// looking clean (3 decimals for unit price, 2 for total cost, etc.).
 function round(n: number, places: number): number {
   const m = 10 ** places;
   return Math.round(n * m) / m;
 }
 
+// Given two of the three values (amount × unitPrice = totalCost), compute
+// the third. Returns null if any required input is missing or zero
+// (zero would make some divisions infinite or undefined).
 function computeFrom(
   target: DeriveField,
   v: DeriveValues,
@@ -60,7 +50,7 @@ function computeFrom(
       derivedField: 'amount',
     };
   }
-  // unitPrice
+
   if (v.totalCost == null || v.amount == null || v.amount === 0) return null;
   return {
     amount: v.amount,
@@ -70,16 +60,12 @@ function computeFrom(
   };
 }
 
-/**
- * Resolve the form values according to the rules above.
- *
- *   - exactly 1 field empty → derive it from the other two
- *   - all 3 filled         → re-derive the field NOT in the top 2 of
- *                             `lastTouched` (least-recently-touched wins)
- *   - 0 or only 1 filled   → returns null (can't derive anything)
- *
- * `lastTouched` is most-recent first.
- */
+// 2-of-3 reconciliation for the (amount, unitPrice, totalCost) triplet.
+// When exactly two fields are filled, derives the third. When all three are
+// filled, derives whichever the user touched LEAST recently — `lastTouched`
+// is a stack of the most-recently-edited fields, so the field not in the
+// top two is the one we recalculate. Returns null when fewer than two
+// fields are filled (caller should leave the form alone).
 export function reconcile(
   v: DeriveValues,
   lastTouched: DeriveField[],

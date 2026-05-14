@@ -17,6 +17,10 @@ const VEHICLE_TYPES: { value: VehicleType; label: string }[] = [
   { value: 'ev', label: 'Electric (EV)' },
 ];
 
+// Vehicles screen — CRUD for the list of cars. Each vehicle has a name,
+// type (ICE / HEV / PHEV / EV), and for PHEVs/EVs an optional per-vehicle
+// default electricity cost (overrides the global setting). Adding the
+// first vehicle is required before the user can log any fuel-ups.
 export function VehiclesScreen({ settings }: Props) {
   const vehicles = useLiveQuery(() => db.vehicles.orderBy('createdAt').toArray(), []) ?? [];
   const [editing, setEditing] = useState<Vehicle | null>(null);

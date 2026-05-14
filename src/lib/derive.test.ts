@@ -30,8 +30,8 @@ describe('reconcile (2-of-3 cost fields)', () => {
   });
 
   it('re-derives the oldest-touched field when all three are filled', () => {
-    // User filled amount then unitPrice, totalCost was auto-derived. They
-    // then edited totalCost. Now amount is the oldest-touched → derive it.
+
+
     let r = reconcile(
       { amount: 30, unitPrice: 1.85, totalCost: 60 },
       ['totalCost', 'unitPrice', 'amount'],
@@ -39,7 +39,7 @@ describe('reconcile (2-of-3 cost fields)', () => {
     expect(r?.derivedField).toBe('amount');
     expect(r?.amount).toBeCloseTo(60 / 1.85, 3);
 
-    // Then they edit amount → derive whichever is now stale (here: unitPrice).
+
     r = reconcile(
       { amount: 35, unitPrice: 1.85, totalCost: 60 },
       ['amount', 'totalCost', 'unitPrice'],

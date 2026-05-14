@@ -8,6 +8,9 @@ interface Props {
   children: ReactNode;
 }
 
+// Generic bottom-sheet modal. Renders nothing when `open` is false.
+// Backdrop tap and the header X button both fire `onClose`. Children
+// are placed inside a scrollable content area so long forms still fit.
 export function Modal({ open, title, onClose, children }: Props) {
   useEffect(() => {
     if (!open) return;

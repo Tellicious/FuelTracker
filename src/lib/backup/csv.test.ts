@@ -112,7 +112,7 @@ describe('CSV round-trip', () => {
       }),
     ];
     const csv = fuelupsToCsv(entries, [evVehicle]);
-    expect(csv).toContain(',,,45,0.3,'); // empty gasLiters/gasPricePerLiter, then 45,0.3
+    expect(csv).toContain(',,,45,0.3,');
     const { fuelups } = csvToFuelups(csv, [evVehicle]);
     expect(fuelups[0].kWhCharged).toBe(45);
     expect(fuelups[0].kWhPrice).toBe(0.3);
@@ -136,7 +136,7 @@ describe('legacy CSV import (schema v1)', () => {
     expect(fuelups[0].kWhCharged).toBeNull();
     expect(fuelups[0].phevKwhPer100Km).toBe(12);
     expect(fuelups[0].phevKwhPrice).toBe(0.28);
-    // `missed` column is silently ignored
+
   });
 
   it('routes legacy liters to kWhCharged for EV vehicles', () => {

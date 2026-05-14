@@ -20,19 +20,26 @@ import { RecordsScreen } from './screens/Records';
 import { SettingsScreen } from './screens/Settings';
 import { VehiclesScreen } from './screens/Vehicles';
 
+// Root component. Owns the active-tab state and the active-vehicle id,
+// both of which are persisted to localStorage so navigation survives a
+// page reload. Renders the active tab inside an ErrorBoundary so a crash
+// in one screen doesn't take down the rest of the app. The TabBar is
+// pinned to the bottom and switches between five views (Dashboard /
+// Records / AddEntry / Vehicles / Settings); switching tabs scrolls the
+// screen back to the top.
 export function App() {
   const settings = useLiveQuery(() => getSettings(), []);
   const [tab, setTabRaw] = useState<Tab>('dashboard');
-  // Reset scroll position whenever the user switches tabs — otherwise opening
-  // (say) Add Entry after scrolling down on Dashboard keeps the previous
-  // scroll offset and shows the new screen mid-page. Wraps setTabRaw so every
-  // call site (including the TabBar onChange) gets the behaviour for free.
+
+
+
+
   const setTab = (next: Tab) => {
     setTabRaw(next);
     try {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
     } catch {
-      // 'instant' isn't recognised on older WebKit; fall back to plain scroll.
+
       window.scrollTo(0, 0);
     }
   };
@@ -41,9 +48,9 @@ export function App() {
   const [bannerHash, setBannerHash] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // Vehicle selection — shared across Dashboard / Records / AddEntry. Hydrated
-  // from localStorage on first paint, then maintained in state and mirrored
-  // back to localStorage on every change.
+
+
+
   const [activeVehicleId, setActiveVehicleIdState] = useState<string | null>(
     () => safeGet('ft.lastVehicleId'),
   );
@@ -54,9 +61,9 @@ export function App() {
 
   const vehicles = useLiveQuery(() => db.vehicles.orderBy('createdAt').toArray(), []) ?? [];
 
-  // Once vehicles are loaded, make sure activeVehicleId points at something
-  // real. If we have nothing selected yet, or the persisted id no longer
-  // exists, fall back to the first vehicle.
+
+
+
   useEffect(() => {
     if (!vehicles.length) return;
     if (!activeVehicleId || !vehicles.some((v) => v.id === activeVehicleId)) {
@@ -64,14 +71,14 @@ export function App() {
     }
   }, [vehicles, activeVehicleId]);
 
-  // Whenever the chosen theme mode changes, re-apply it to the document.
+
   useEffect(() => {
     if (settings?.themeMode) applyThemeFromSettings(settings.themeMode);
   }, [settings?.themeMode]);
 
   const { needRefresh, updateServiceWorker } = useRegisterSW({
     onRegisteredSW() {
-      // SW registered
+
     },
   });
   const [refreshState] = needRefresh;
@@ -79,16 +86,16 @@ export function App() {
   const vehicleCount = vehicles.length;
   const entryCount = useLiveQuery(() => db.fuelups.count(), []) ?? 0;
 
-  // Pop a toast that auto-dismisses
+
   const pushToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2400);
   };
 
-  // Compute current payload hash for the backup banner decision. Wrapped so
-  // that a failure here (e.g. crypto.subtle unavailable in an unusual
-  // context) doesn't surface as an unhandled rejection — we just skip the
-  // banner. The export flow re-computes the hash with its own try/catch.
+
+
+
+
   useEffect(() => {
     if (!settings) return;
     let cancelled = false;
@@ -98,7 +105,7 @@ export function App() {
         const h = await payloadHash(p);
         if (!cancelled) setBannerHash(h);
       } catch (err) {
-        // eslint-disable-next-line no-console
+
         console.warn('payloadHash skipped:', err);
       }
     })();

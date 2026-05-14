@@ -1,32 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { smoothSeries } from '../lib/stats';
 
 export type ChartSeries = 'gas' | 'equiv' | 'elec';
 
 export interface ChartPoint {
   date: string;
-  gas: number | null;        // primary unit (km/l or l/100km)
-  equivalent: number | null; // primary unit (km/l or l/100km)
-  elec?: number | null;      // kWh/100 km (right axis)
+  gas: number | null;
+  equivalent: number | null;
+  elec?: number | null;
 }
 
 export type Scale = '1M' | '3M' | '6M' | '1Y' | 'ALL' | 'CUSTOM';
 
 interface Props {
   points: ChartPoint[];
-  unitLabel: string; // unit for left axis (e.g. "km/l" or "l/100km")
+  unitLabel: string;
   scale: Scale;
   onScaleChange: (s: Scale) => void;
-  /** Optional custom range, used when scale === 'CUSTOM'. ISO YYYY-MM-DD. */
   customFrom?: string | null;
   customTo?: string | null;
   onCustomRangeChange?: (from: string | null, to: string | null) => void;
-  /** Which series this vehicle type *could* show. */
   showGas?: boolean;
   showEquiv?: boolean;
   showElec?: boolean;
-  /** Which series the user currently wants visible. Toggleable via legend. */
   visible: Record<ChartSeries, boolean>;
   onVisibleChange: (next: Record<ChartSeries, boolean>) => void;
+  smoothed: boolean;
+  onSmoothedChange: (next: boolean) => void;
 }
 
 const SCALES: Scale[] = ['1M', '3M', '6M', '1Y', 'ALL', 'CUSTOM'];
@@ -37,11 +37,9 @@ const COLORS: Record<ChartSeries, string> = {
   elec: 'var(--chart-elec)',
 };
 
-// ---------- viewport math ----------
-
 interface Viewport {
-  from: number; // unix ms
-  to: number;   // unix ms
+  from: number;
+  to: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -50,11 +48,9 @@ const PAN_PAD_MS = 30 * DAY_MS;
 const PAN_PIXEL_THRESHOLD = 6;
 const WHEEL_ZOOM_FACTOR = 1.15;
 
-/**
- * Derive the viewport from the props-driven scale. For relative scales (1M,
- * 3M, …) the viewport is anchored to "now"; for CUSTOM the explicit dates
- * are used; for ALL it's the data's full extent.
- */
+// Build a viewport (a time range in unix ms) from the user-facing scale
+// selector and any custom-range inputs. Returns null when there's no data
+// to anchor against — caller handles that case with an empty-state.
 function viewportFromProps(
   scale: Scale,
   customFrom: string | null | undefined,
@@ -76,10 +72,9 @@ function viewportFromProps(
   return { from: Date.now() - days * DAY_MS, to: Date.now() };
 }
 
-/**
- * Constrain a viewport so it doesn't get absurdly narrow, absurdly wide, or
- * pan entirely outside the data + a comfortable pad.
- */
+// Constrain a viewport to a sensible range around the data: minimum 7 days
+// wide, maximum 1.5x the data span plus 30 days of pan-padding on each side.
+// Re-centers if the requested range would extend past the pan-pad limit.
 function clampViewport(
   v: Viewport,
   dataBounds: { min: number; max: number } | null,
@@ -107,13 +102,15 @@ function clampViewport(
   return { from, to };
 }
 
-/** Format an ISO timestamp as a YYYY-MM-DD string suitable for <input type=date>. */
+// Format a Date as YYYY-MM-DD (timezone-aware: uses the local date, not UTC).
 function isoDate(d: Date): string {
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** Pick ~4 "nice" tick values using a 1-2-5 step. */
+// Compute "nice" round tick values for an axis. Snaps the step size to
+// 1×10ⁿ, 2×10ⁿ, 5×10ⁿ multiples so ticks land on memorable numbers, and
+// extends start/end outward to the next nice step.
 function niceTicks(min: number, max: number, target = 4): number[] {
   if (!isFinite(min) || !isFinite(max)) return [0, 1];
   if (max <= min) return [min, min + 1];
@@ -132,17 +129,18 @@ function niceTicks(min: number, max: number, target = 4): number[] {
   return ticks;
 }
 
+// Format a tick value with adaptive precision: integers for large magnitudes,
+// one decimal for medium, two trimmed decimals for small.
 function fmtTick(v: number): string {
   if (Math.abs(v) >= 100) return Math.round(v).toString();
   if (Math.abs(v) >= 10) return v.toFixed(1).replace(/\.0$/, '');
   return v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-/**
- * Pick x-axis date ticks: 3-6 evenly spaced across the viewport, year-aware
- * label format. When the range spans more than ~13 months we include the year
- * ('Jan ’25'); on very short zooms we add day-of-month.
- */
+// Build 4-5 evenly-spaced x-axis tick labels for the visible time range.
+// Switches between "Mar 5" (short span, same year), "Mar" (medium, same
+// year) and "Mar '25" (crosses year boundary or spans more than ~13 months)
+// to keep labels compact while still unambiguous.
 function dateTicks(minT: number, maxT: number): { iso: string; label: string }[] {
   if (maxT <= minT) return [];
   const spanDays = (maxT - minT) / DAY_MS;
@@ -168,6 +166,7 @@ function dateTicks(minT: number, maxT: number): { iso: string; label: string }[]
   return out;
 }
 
+// Format an ISO date for the tooltip header — "14 May 2026" style.
 function fmtDateLong(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString('en-GB', {
@@ -177,10 +176,19 @@ function fmtDateLong(iso: string): string {
   });
 }
 
+// Format a numeric value for display in the tooltip rows.
 function fmtVal(v: number, decimals = 1): string {
   return v.toFixed(decimals);
 }
 
+// Custom SVG line chart with two y-axes (left for fuel-economy units like
+// km/l, right for kWh/100 km). Renders up to three series — raw gas, equiv
+// gas (PHEV-only), electricity — that the user can independently toggle.
+// Supports pan via one-finger drag (over a 6px threshold), pinch zoom, and
+// mouse-wheel zoom. Tapping the chart snaps the tooltip to the nearest
+// data point; scrubbing the finger left/right updates which point is
+// highlighted. A moving-average "Smooth" mode replaces the raw series with
+// a centered window average.
 export function LineChart({
   points,
   unitLabel,
@@ -194,10 +202,12 @@ export function LineChart({
   showElec = false,
   visible,
   onVisibleChange,
+  smoothed,
+  onSmoothedChange,
 }: Props) {
   const [hover, setHover] = useState<number | null>(null);
 
-  // -------- Data bounds & full range (for the date pickers) --------
+
   const sortedPoints = useMemo(
     () => [...points].sort((a, b) => (a.date < b.date ? -1 : 1)),
     [points],
@@ -217,76 +227,88 @@ export function LineChart({
     };
   }, [dataBounds]);
 
-  // -------- Viewport: starts from props, mutates during gestures --------
+
   const propViewport = useMemo(() => {
     const raw = viewportFromProps(scale, customFrom, customTo, dataBounds);
     return raw ? clampViewport(raw, dataBounds) : null;
   }, [scale, customFrom, customTo, dataBounds]);
   const [localViewport, setLocalViewport] = useState<Viewport | null>(propViewport);
-  // Whenever the props-derived viewport changes (user picked a scale,
-  // switched vehicles, edited the date inputs), sync our local copy.
+
+
   useEffect(() => {
     setLocalViewport(propViewport);
   }, [propViewport]);
   const viewport = localViewport;
 
-  // Geometry. Axis padding sized to fit ~3-char tick labels (e.g. "12.5")
-  // at 10px mono on the outside, with axis titles ("km/l", "kWh/100 km")
-  // anchored at the axis line and extending *into* the plot — so the
-  // titles don't impose a constraint on the padding values.
+
+
+
+
   const W = 360;
   const H = 230;
   const pad = { l: 28, r: 30, t: 20, b: 40 };
   const innerW = W - pad.l - pad.r;
   const innerH = H - pad.t - pad.b;
 
-  // -------- Gesture refs: pinch / pan / wheel --------
+
   const svgRef = useRef<SVGSVGElement | null>(null);
   const pointersRef = useRef<Map<number, { x: number }>>(new Map());
   const gestureRef = useRef<{
     kind: 'pan' | 'pinch';
     startViewport: Viewport;
-    startCenterX: number; // pointer x at gesture start (chart coords)
-    startPinchSpan: number; // |x1 - x2| at start of pinch
-    armed: boolean; // for pan: true once user moves past the threshold
-    committed: boolean; // for pan: true if we actually panned (vs. just tapped)
+    startCenterX: number;
+    startPinchSpan: number;
+    armed: boolean;
+    committed: boolean;
   } | null>(null);
 
-  /** Convert a client x (from PointerEvent) to chart coordinate space (0..W). */
+
   const clientToChartX = (clientX: number): number => {
     if (!svgRef.current) return 0;
     const rect = svgRef.current.getBoundingClientRect();
     return ((clientX - rect.left) / rect.width) * W;
   };
 
-  /** Convert a chart-space x to a timestamp inside the current viewport. */
+
   const chartXToTime = (chartX: number, v: Viewport): number => {
     const frac = (chartX - pad.l) / innerW;
     return v.from + frac * (v.to - v.from);
   };
 
-  /** Commit a (gesture-driven) viewport up to the parent as CUSTOM mode. */
+
   const commitViewport = (v: Viewport) => {
     if (!onCustomRangeChange) return;
     onCustomRangeChange(isoDate(new Date(v.from)), isoDate(new Date(v.to)));
     if (scale !== 'CUSTOM') onScaleChange('CUSTOM');
   };
 
+  const findNearestIndex = (chartX: number): number | null => {
+    if (!data.length || !viewport) return null;
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < data.length; i++) {
+      const t = new Date(data[i].date).getTime();
+      const px = pad.l + ((t - viewport.from) / (viewport.to - viewport.from)) * innerW;
+      const d = Math.abs(px - chartX);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best >= 0 ? best : null;
+  };
+
   const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!viewport) return;
     const x = clientToChartX(e.clientX);
     pointersRef.current.set(e.pointerId, { x });
-    // Pointer capture on SVG elements throws on some older Safari versions;
-    // it's a nice-to-have for desktop drag-outside-element, not essential.
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     if (pointersRef.current.size === 1) {
-      // Start tentative pan — won't actually pan until threshold is exceeded,
-      // so a tap-on-a-dot still triggers the tooltip.
+      const nearest = findNearestIndex(x);
+      if (nearest != null) setHover(nearest);
       gestureRef.current = {
         kind: 'pan',
         startViewport: { ...viewport },
@@ -320,9 +342,11 @@ export function LineChart({
     if (g.kind === 'pan' && pointersRef.current.size === 1) {
       const dx = x - g.startCenterX;
       if (!g.armed) {
+        const nearest = findNearestIndex(x);
+        if (nearest != null) setHover(nearest);
         if (Math.abs(dx) < PAN_PIXEL_THRESHOLD) return;
         g.armed = true;
-        setHover(null); // pan supersedes tooltip hover
+        setHover(null);
       }
       const startWidth = g.startViewport.to - g.startViewport.from;
       const dt = (dx / innerW) * startWidth;
@@ -335,11 +359,9 @@ export function LineChart({
     } else if (g.kind === 'pinch' && pointersRef.current.size >= 2) {
       const [p1, p2] = [...pointersRef.current.values()];
       const span = Math.max(Math.abs(p1.x - p2.x), 1);
-      const factor = g.startPinchSpan / span; // spread fingers → factor < 1 → zoom in
+      const factor = g.startPinchSpan / span;
       const startWidth = g.startViewport.to - g.startViewport.from;
       const newWidth = startWidth * factor;
-      // Keep the time-point that was originally under the gesture's centroid
-      // sitting at wherever that centroid is right now (in chart coords).
       const centerTime = chartXToTime(g.startCenterX, g.startViewport);
       const centerXNow = (p1.x + p2.x) / 2;
       const centerFracNow = (centerXNow - pad.l) / innerW;
@@ -358,7 +380,7 @@ export function LineChart({
       gestureRef.current = null;
       if (wasGestureCommitted && localViewport) commitViewport(localViewport);
     } else if (pointersRef.current.size === 1) {
-      // Transitioning from 2-finger pinch back to 1-finger pan: rebase.
+
       const remaining = [...pointersRef.current.values()][0];
       gestureRef.current = {
         kind: 'pan',
@@ -405,8 +427,7 @@ export function LineChart({
     />
   );
 
-  // -------- Filter points by current viewport --------
-  const data = useMemo(() => {
+  const rawData = useMemo(() => {
     if (!viewport) return [];
     return sortedPoints.filter((p) => {
       const t = new Date(p.date).getTime();
@@ -414,7 +435,19 @@ export function LineChart({
     });
   }, [sortedPoints, viewport]);
 
-  // Resolve effective series visibility (user toggle ∧ vehicle-type relevance).
+  const data = useMemo(() => {
+    if (!smoothed) return rawData;
+    const gas = smoothSeries(rawData.map((p) => p.gas));
+    const equiv = smoothSeries(rawData.map((p) => p.equivalent));
+    const elec = smoothSeries(rawData.map((p) => p.elec ?? null));
+    return rawData.map((p, i) => ({
+      date: p.date,
+      gas: gas[i],
+      equivalent: equiv[i],
+      elec: elec[i],
+    })) as ChartPoint[];
+  }, [rawData, smoothed]);
+
   const onGas = (showGas ?? true) && visible.gas;
   const onEquiv = (showEquiv ?? true) && visible.equiv;
   const onElec = (showElec ?? false) && visible.elec;
@@ -428,20 +461,17 @@ export function LineChart({
     );
   }
 
-  // Axes follow the VIEWPORT, not the visible data — so when zoomed/panned
-  // into a gap the axes still render at the chosen extent rather than
-  // collapsing onto whichever points happen to fall inside.
   const minT = viewport.from;
   const maxT = viewport.to;
   const tRange = Math.max(maxT - minT, 1);
 
-  // ---- Left axis (km/l-like, gas + equivalent) ----
+
   const leftVals: number[] = [];
   for (const p of data) {
     if (onGas && p.gas != null) leftVals.push(p.gas);
     if (onEquiv && p.equivalent != null) leftVals.push(p.equivalent);
   }
-  // ---- Right axis (kWh/100 km, electricity) ----
+
   const rightVals: number[] = [];
   for (const p of data) {
     if (onElec && p.elec != null) rightVals.push(p.elec);
@@ -458,6 +488,8 @@ export function LineChart({
           visible={visible}
           onVisibleChange={onVisibleChange}
           unitLabel={unitLabel}
+          smoothed={smoothed}
+          onSmoothedChange={onSmoothedChange}
         />
         <div className="empty" style={{ padding: '20px 8px' }}>
           Toggle a series on to see the chart.
@@ -466,15 +498,25 @@ export function LineChart({
       </div>
     );
   }
-  // When viewport is over a gap with no data points, we still render the
-  // axes (so the user has a frame of reference to pan/zoom out of).
+
+
 
   const leftActive = leftVals.length > 0;
   const rightActive = rightVals.length > 0;
 
-  const leftTicks = leftActive ? niceTicks(Math.min(...leftVals), Math.max(...leftVals), 6) : [];
+  const padRange = (vals: number[]): [number, number] => {
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
+    const span = hi - lo;
+    if (span === 0) return [lo - 1, hi + 1];
+    const pad = span * 0.125;
+    return [lo - pad, hi + pad];
+  };
+  const leftTicks = leftActive
+    ? (() => { const [lo, hi] = padRange(leftVals); return niceTicks(lo, hi, 6); })()
+    : [];
   const rightTicks = rightActive
-    ? niceTicks(Math.min(...rightVals), Math.max(...rightVals), 6)
+    ? (() => { const [lo, hi] = padRange(rightVals); return niceTicks(lo, hi, 6); })()
     : [];
   const leftMin = leftActive ? leftTicks[0] : 0;
   const leftMax = leftActive ? leftTicks[leftTicks.length - 1] : 1;
@@ -511,12 +553,12 @@ export function LineChart({
   const equivPath = onEquiv ? buildPath((p) => p.equivalent, yLeft) : '';
   const elecPath = onElec ? buildPath((p) => p.elec ?? null, yRight) : '';
 
-  // X-axis ticks
+
   const xTicks = dateTicks(minT, maxT);
 
-  // Tooltip
+
   const hovered = hover != null ? data[hover] : null;
-  // Anchor point: prefer gas, then equivalent, then elec (whichever is visible & present)
+
   let anchorX = 0;
   let anchorY = 0;
   if (hovered) {
@@ -527,8 +569,8 @@ export function LineChart({
     else anchorY = pad.t + innerH / 2;
   }
 
-  // Tooltip card content. Labels are abbreviated for the compact card —
-  // the full legend pills above the chart still spell them out.
+
+
   const tipRows: { label: string; value: string; color: string }[] = [];
   if (hovered) {
     if (onGas && hovered.gas != null) {
@@ -574,6 +616,8 @@ export function LineChart({
         visible={visible}
         onVisibleChange={onVisibleChange}
         unitLabel={unitLabel}
+        smoothed={smoothed}
+        onSmoothedChange={onSmoothedChange}
       />
 
       <svg
@@ -590,7 +634,7 @@ export function LineChart({
         onPointerCancel={handlePointerCancel}
         onWheel={handleWheel}
       >
-        {/* Left axis title — anchored at the left axis, extending rightward */}
+        {}
         {leftActive && (
           <text
             x={pad.l}
@@ -602,7 +646,7 @@ export function LineChart({
             {unitLabel}
           </text>
         )}
-        {/* Right axis title — anchored at the right axis, extending leftward */}
+        {}
         {rightActive && (
           <text
             x={W - pad.r}
@@ -616,7 +660,7 @@ export function LineChart({
           </text>
         )}
 
-        {/* Horizontal gridlines (driven by the left axis when present, else right) */}
+        {}
         {(leftActive ? leftTicks : rightTicks).map((t, i) => {
           const yy = leftActive ? yLeft(t) : yRight(t);
           return (
@@ -634,7 +678,7 @@ export function LineChart({
           );
         })}
 
-        {/* Left tick labels */}
+        {}
         {leftActive &&
           leftTicks.map((t) => (
             <text
@@ -651,7 +695,7 @@ export function LineChart({
             </text>
           ))}
 
-        {/* Right tick labels */}
+        {}
         {rightActive &&
           rightTicks.map((t) => (
             <text
@@ -668,7 +712,7 @@ export function LineChart({
             </text>
           ))}
 
-        {/* Y axes lines */}
+        {}
         <line
           x1={pad.l}
           x2={pad.l}
@@ -687,7 +731,7 @@ export function LineChart({
             strokeWidth={1}
           />
         )}
-        {/* X axis */}
+        {}
         <line
           x1={pad.l}
           x2={pad.l + innerW}
@@ -697,7 +741,7 @@ export function LineChart({
           strokeWidth={1}
         />
 
-        {/* X-axis ticks */}
+        {}
         {xTicks.map((tk, i) => {
           const xx = x(tk.iso);
           return (
@@ -724,8 +768,7 @@ export function LineChart({
           );
         })}
 
-        {/* Series lines — kept thin & rounded for an elegant look. Gas is
-            the primary metric so it gets a touch more weight than the others. */}
+        {}
         {elecPath && (
           <path
             d={elecPath}
@@ -758,7 +801,7 @@ export function LineChart({
           />
         )}
 
-        {/* Markers — small, only hovered grows. */}
+        {}
         {onGas &&
           data.map((p, i) =>
             p.gas == null ? null : (
@@ -811,7 +854,7 @@ export function LineChart({
             ),
           )}
 
-        {/* Hover crosshair vertical */}
+        {}
         {hovered && (
           <line
             x1={anchorX}
@@ -826,7 +869,7 @@ export function LineChart({
           />
         )}
 
-        {/* Tooltip card */}
+        {}
         {hovered && tipRows.length > 0 && (
           <g pointerEvents="none">
             <rect
@@ -893,6 +936,10 @@ export function LineChart({
   );
 }
 
+// The toggle-pill row above the chart: one pill per series (showing its
+// label + unit and color dot) plus a "Smooth" pill at the end. Tapping a
+// series pill hides/shows it; tapping Smooth toggles moving-average mode.
+// Pills are kept compact enough that all three fit on one line on iPhone.
 function SeriesToggles({
   showGas,
   showEquiv,
@@ -900,6 +947,8 @@ function SeriesToggles({
   visible,
   onVisibleChange,
   unitLabel,
+  smoothed,
+  onSmoothedChange,
 }: {
   showGas?: boolean;
   showEquiv?: boolean;
@@ -907,6 +956,8 @@ function SeriesToggles({
   visible: Record<ChartSeries, boolean>;
   onVisibleChange: (next: Record<ChartSeries, boolean>) => void;
   unitLabel: string;
+  smoothed: boolean;
+  onSmoothedChange: (next: boolean) => void;
 }) {
   const toggle = (k: ChartSeries) => onVisibleChange({ ...visible, [k]: !visible[k] });
   const Pill = ({
@@ -932,10 +983,7 @@ function SeriesToggles({
         borderColor: on ? color : 'var(--line)',
       }}
     >
-      <span
-        className="chart-pill-dot"
-        style={{ background: color }}
-      />
+      <span className="chart-pill-dot" style={{ background: color }} />
       <span className="chart-pill-text">
         <span className="chart-pill-label">{label}</span>
         <span className="chart-pill-sub">{sub}</span>
@@ -945,36 +993,34 @@ function SeriesToggles({
   return (
     <div className="chart-toggles">
       {showGas && (
-        <Pill
-          on={visible.gas}
-          color={COLORS.gas}
-          label="Gas"
-          sub={unitLabel}
-          onClick={() => toggle('gas')}
-        />
+        <Pill on={visible.gas} color={COLORS.gas} label="Gas" sub={unitLabel} onClick={() => toggle('gas')} />
       )}
       {showEquiv && (
-        <Pill
-          on={visible.equiv}
-          color={COLORS.equiv}
-          label="Equivalent"
-          sub={unitLabel}
-          onClick={() => toggle('equiv')}
-        />
+        <Pill on={visible.equiv} color={COLORS.equiv} label="Equivalent" sub={unitLabel} onClick={() => toggle('equiv')} />
       )}
       {showElec && (
-        <Pill
-          on={visible.elec}
-          color={COLORS.elec}
-          label="Electricity"
-          sub="kWh/100km"
-          onClick={() => toggle('elec')}
-        />
+        <Pill on={visible.elec} color={COLORS.elec} label="Electricity" sub="kWh/100km" onClick={() => toggle('elec')} />
       )}
+      <button
+        type="button"
+        onClick={() => onSmoothedChange(!smoothed)}
+        className="chart-pill chart-pill-smooth"
+        aria-pressed={smoothed}
+        style={{ opacity: smoothed ? 1 : 0.45 }}
+      >
+        <span className="chart-pill-text">
+          <span className="chart-pill-label">Smooth</span>
+          <span className="chart-pill-sub">{smoothed ? 'on' : 'off'}</span>
+        </span>
+      </button>
     </div>
   );
 }
 
+// The scale-preset row below the chart: 1M / 3M / 6M / 1Y / ALL plus a
+// Custom button that expands into two date inputs. Choosing Custom on a
+// fresh load auto-populates the date inputs from the data's min/max so
+// the user has a starting point to narrow from.
 function ScaleSelector({
   scale,
   onChange,
@@ -990,8 +1036,8 @@ function ScaleSelector({
   onCustomRangeChange?: (from: string | null, to: string | null) => void;
   fullRange: { min: string; max: string } | null;
 }) {
-  // When the user picks "Custom" with no range set yet, pre-fill it with the
-  // data's full extent so the chart doesn't blank out.
+
+
   const pickCustom = () => {
     if (scale === 'CUSTOM') return;
     if (onCustomRangeChange && fullRange && !customFrom && !customTo) {

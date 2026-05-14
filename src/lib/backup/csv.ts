@@ -1,21 +1,6 @@
 import { uid } from '../../db/db';
 import type { FuelUp, Vehicle } from '../../db/types';
 
-/**
- * Excel-friendly CSV format for the fuel-ups table.
- *
- * Columns (current schema):
- *   date, vehicle, vehicleId, odometer, gasLiters, gasPricePerLiter,
- *   kWhCharged, kWhPrice, totalCost, partial, missed, phevKwhPer100Km,
- *   phevKwhPrice, notes, id
- *
- * Old exports (schema v1) used `liters`, `pricePerLiter`,
- * `avgElectricityConsumption`, `avgElectricityCost` — same `missed` column.
- * The importer transparently handles both — it sniffs the header row and
- * routes columns to the new fields, using the matched vehicle's type to
- * decide whether legacy `liters` means gas litres or kWh charged.
- */
-
 const NEW_COLUMNS = [
   'date',
   'vehicle',
@@ -34,8 +19,8 @@ const NEW_COLUMNS = [
   'id',
 ] as const;
 
-// ---------- low-level CSV helpers ----------
-
+// Wrap a value in quotes if it contains a separator, quote, or newline.
+// RFC 4180–compatible: embedded quotes are doubled (`"` → `""`).
 function csvEscape(value: string): string {
   if (
     value.includes(',') ||
@@ -48,12 +33,18 @@ function csvEscape(value: string): string {
   return value;
 }
 
+// Format any cell value as a CSV-safe string. Nulls become empty, booleans
+// become "true"/"false", everything else is stringified then csvEscape'd.
 function fmtField(v: string | number | boolean | null | undefined): string {
   if (v == null) return '';
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   return csvEscape(String(v));
 }
 
+// Split a CSV line into its cells. Handles quoted cells, doubled-quote
+// escapes inside quoted cells, and treats unquoted commas as separators.
+// Does NOT handle embedded newlines within a quoted cell (we accept that
+// limitation — our exports never embed newlines in any field).
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
   let cur = '';
@@ -90,6 +81,8 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
+// Parse a numeric cell, accepting both "." and "," as the decimal point
+// for cross-locale resilience. Empty/blank/unparseable cells return null.
 function parseNumOrNull(s: string): number | null {
   const t = s.trim();
   if (t === '') return null;
@@ -97,14 +90,18 @@ function parseNumOrNull(s: string): number | null {
   return isFinite(n) ? n : null;
 }
 
+// Parse a boolean cell from a variety of common spellings used in CSV
+// exports from other apps (true/false, 1/0, yes/no, y/n).
 function parseBool(s: string): boolean {
   const t = s.trim().toLowerCase();
   return t === 'true' || t === '1' || t === 'yes' || t === 'y';
 }
 
-// ---------- serialise ----------
 
-/** Serialize fuel-ups as an Excel-compatible CSV string. */
+// Serialize fuel-ups as an Excel-compatible CSV string. Rows are sorted
+// chronologically by date so the output reads naturally when opened.
+// Includes both human-readable columns (vehicle name) AND the stable
+// vehicleId so round-tripping is exact.
 export function fuelupsToCsv(fuelups: FuelUp[], vehicles: Vehicle[]): string {
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const lines: string[] = [NEW_COLUMNS.join(',')];
@@ -142,16 +139,11 @@ export interface CsvParseResult {
   unknownVehicleNames: string[];
 }
 
-/**
- * Parse a fuel-ups CSV. Accepts both the current schema (gasLiters / kWhCharged
- * / phevKwh* columns) and the legacy schema (liters / pricePerLiter /
- * avgElectricityConsumption / avgElectricityCost) by sniffing the header.
- *
- * For legacy CSVs the importer needs to know each row's vehicle type to
- * decide whether `liters` means gas litres or kWh charged — it looks up the
- * vehicle by `vehicleId` first, falling back to `vehicle` name. Vehicles not
- * found in the provided list are returned as `unknownVehicleNames`.
- */
+// Parse a CSV string into fuel-up rows + a list of unknown vehicle names
+// the caller will need to create stubs for. Validates a couple of required
+// columns up front so we fail fast on completely-wrong files. Supports
+// importing v1 legacy CSVs (single `liters`/`pricePerLiter` columns) as
+// well as the current v2 split-column format.
 export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
   if (lines.length < 1) throw new Error('CSV is empty.');
@@ -164,7 +156,7 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
   }
 
   const col = (name: string) => header.indexOf(name);
-  // New + legacy column indices (negative when absent).
+
   const idx = {
     date: col('date'),
     vehicle: col('vehicle'),
@@ -175,14 +167,14 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
     missed: col('missed'),
     notes: col('notes'),
     id: col('id'),
-    // new
+
     gasLiters: col('gasLiters'),
     gasPricePerLiter: col('gasPricePerLiter'),
     kWhCharged: col('kWhCharged'),
     kWhPrice: col('kWhPrice'),
     phevKwhPer100Km: col('phevKwhPer100Km'),
     phevKwhPrice: col('phevKwhPrice'),
-    // legacy
+
     liters: col('liters'),
     pricePerLiter: col('pricePerLiter'),
     avgElectricityConsumption: col('avgElectricityConsumption'),
@@ -203,7 +195,7 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
     const rawVehicleId = get(idx.vehicleId).trim();
     const rawVehicleName = get(idx.vehicle).trim();
 
-    // Resolve vehicleId; auto-create-stub deferred to the caller (importFile).
+
     let resolvedVehicleId: string;
     let matchedVehicle: Vehicle | undefined;
     if (rawVehicleId && byId.has(rawVehicleId)) {
@@ -228,7 +220,7 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
       throw new Error(`Row ${i + 1}: invalid odometer "${odometerStr}".`);
     }
 
-    // Pick fields based on schema.
+
     let gasLiters: number | null;
     let gasPricePerLiter: number | null;
     let kWhCharged: number | null;
@@ -237,7 +229,7 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
     let phevKwhPrice: number | null;
 
     if (isLegacy) {
-      // Legacy schema: liters/pricePerLiter is dual-use; route by vehicle type.
+
       const legacyAmount = parseNumOrNull(get(idx.liters));
       const legacyUnitPrice = parseNumOrNull(get(idx.pricePerLiter));
       const isEv = matchedVehicle?.type === 'ev';

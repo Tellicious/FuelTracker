@@ -14,7 +14,6 @@ interface Props {
   onEdit: (entryId: string) => void;
 }
 
-/** Sort direction for the records list — date only. */
 type SortKey = 'date-desc' | 'date-asc';
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -36,6 +35,10 @@ function compareByDate(a: FuelUp, b: FuelUp, key: SortKey): number {
   return key === 'date-desc' ? -cmp : cmp;
 }
 
+// Records screen — a chronological list of every fuel-up for the active
+// vehicle, newest first by default with a sort toggle. Each row shows the
+// date, odometer, amount + unit price + total cost, plus partial/missed
+// badges. Tapping a row opens the AddEntry form pre-populated for editing.
 export function RecordsScreen({
   settings,
   vehicles,
@@ -111,7 +114,7 @@ export function RecordsScreen({
             const veh = vehicles.find((v) => v.id === e.vehicleId);
             const isEv = veh?.type === 'ev';
             const sym = currencySymbol(settings.currency);
-            // Pick the right amount/price pair based on vehicle type.
+
             const amount = isEv ? e.kWhCharged : e.gasLiters;
             const unitPrice = isEv ? e.kWhPrice : e.gasPricePerLiter;
             const amountUnit = isEv ? 'kWh' : 'l';
