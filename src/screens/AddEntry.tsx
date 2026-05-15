@@ -204,7 +204,6 @@ export function AddEntryScreen({
   };
 
   const onCostFieldChange = (field: DeriveField, value: string) => {
-    const wasDerivedField = derivedField === field;
     setForm((f) => ({
       ...f,
       amount: field === 'amount' ? value : f.amount,
@@ -212,11 +211,7 @@ export function AddEntryScreen({
       totalCost: field === 'totalCost' ? value : f.totalCost,
     }));
     setLastTouched((lt) => [field, ...lt.filter((x) => x !== field)].slice(0, 3));
-    if (value === '' && wasDerivedField) {
-      setSuppressDerivation(true);
-    } else if (value !== '') {
-      setSuppressDerivation(false);
-    }
+    setSuppressDerivation(value === '');
   };
 
 
