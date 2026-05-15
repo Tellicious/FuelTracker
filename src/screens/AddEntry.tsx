@@ -79,6 +79,7 @@ export function AddEntryScreen({
     blank(activeVehicleId ?? ''),
   );
   const [lastTouched, setLastTouched] = useState<DeriveField[]>([]);
+  const [suppressDerivation, setSuppressDerivation] = useState(false);
   const [previousOdometer, setPreviousOdometer] = useState<number | null>(null);
   const [showErrors, setShowErrors] = useState(false);
 
@@ -115,6 +116,7 @@ export function AddEntryScreen({
       notes: editingEntry.notes ?? '',
     });
     setLastTouched([]);
+    setSuppressDerivation(false);
   }, [editingEntry, vehicles, settings.defaultElectricityCost]);
 
 
@@ -180,13 +182,14 @@ export function AddEntryScreen({
 
   const reconciled = useMemo<ReturnType<typeof reconcile>>(() => {
     if (isEv) return null;
+    if (suppressDerivation) return null;
     const values: DeriveValues = {
       amount: toNumOrNull(form.amount),
       unitPrice: toNumOrNull(form.unitPrice),
       totalCost: toNumOrNull(form.totalCost),
     };
     return reconcile(values, lastTouched);
-  }, [form.amount, form.unitPrice, form.totalCost, lastTouched, isEv]);
+  }, [form.amount, form.unitPrice, form.totalCost, lastTouched, isEv, suppressDerivation]);
 
   const derivedField = reconciled?.derivedField ?? null;
 
@@ -201,6 +204,7 @@ export function AddEntryScreen({
   };
 
   const onCostFieldChange = (field: DeriveField, value: string) => {
+    const wasDerivedField = derivedField === field;
     setForm((f) => ({
       ...f,
       amount: field === 'amount' ? value : f.amount,
@@ -208,6 +212,11 @@ export function AddEntryScreen({
       totalCost: field === 'totalCost' ? value : f.totalCost,
     }));
     setLastTouched((lt) => [field, ...lt.filter((x) => x !== field)].slice(0, 3));
+    if (value === '' && wasDerivedField) {
+      setSuppressDerivation(true);
+    } else if (value !== '') {
+      setSuppressDerivation(false);
+    }
   };
 
 
