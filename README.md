@@ -1,26 +1,15 @@
 # FuelTracker
 
-Offline-first fuel & energy tracker for ICE, HEV, PHEV and EV vehicles. Built as
-an installable iOS-style PWA: zero backend, all data lives in the browser
-(IndexedDB), and you back up to wherever you want (iCloud Drive, Dropbox,
-Google Drive, etc.) by sharing or downloading the export files.
+Offline-first fuel & energy tracker for ICE, HEV, PHEV and EV vehicles. Built as an installable iOS-style PWA: zero backend, all data lives in the browser (IndexedDB), and you back up to wherever you want (iCloud Drive, Dropbox, Google Drive, etc.) by sharing or downloading the export files.
 
 ## What it does
 
-- **Multi-vehicle tracking** — log fuel-ups for as many vehicles as you want,
-  switch between them on the Dashboard / Records screens.
-- **Per-vehicle-type forms** — ICE and HEV get the gas form (liters / €-per-l /
-  total, with 2-of-3 auto-derivation), PHEV adds an optional electricity
-  section, EV gets a pure charging form (kWh + €/kWh, total computed).
-- **Cost-equivalent km/l for PHEVs** — converts your real fuel + electricity
-  spend into the equivalent number of liters you'd have bought at the current
-  pump price, so you can compare PHEV to ICE on a fair money basis.
-- **iOS-aligned look** — SF system font, iOS systemGreen palette, sentence-case
-  labels, Auto/Light/Dark theme picker. Status bar tint matches.
-- **Offline / installable** — runs without network once installed; "Add to
-  Home Screen" on iOS Safari gives you an app icon.
-- **Manual backups** — Settings → Back up now exports two files (CSV + JSON).
-  No automatic cloud sync; you decide where they go.
+- **Multi-vehicle tracking** — log fuel-ups for as many vehicles as you want,   switch between them on the Dashboard / Records screens.
+- **Per-vehicle-type forms** — ICE and HEV get the gas form (liters / €-per-l / total, with 2-of-3 auto-derivation), PHEV adds an optional electricity section, EV gets a pure charging form (kWh + €/kWh, total computed).
+- **Cost-equivalent km/l for PHEVs** — converts your real fuel + electricity spend into the equivalent number of liters you'd have bought at the current pump price, so you can compare PHEV to ICE on a fair money basis.
+- **iOS-aligned look** — SF system font, iOS systemGreen palette, sentence-case labels, Auto/Light/Dark theme picker. Status bar tint matches.
+- **Offline / installable** — runs without network once installed; "Add to Home Screen" on iOS Safari gives you an app icon.
+- **Manual backups** — Settings → Back up now exports two files (CSV + JSON). No automatic cloud sync; you decide where they go.
 
 ## Quick start
 
@@ -37,52 +26,18 @@ stale SW cache on iOS Safari is genuinely painful to debug.
 
 ### Deploying
 
-`dist/` is a plain static folder — the project is set up for GitHub Pages
-via `.github/workflows/deploy.yml`, which publishes on push to `main`. Set
-`BASE_URL=/<repo>/` in the workflow if you're deploying under a project
-page (`https://<user>.github.io/<repo>/`); for a user/org root page
-(`https://<user>.github.io/`), leave it as `/` or omit.
+The project is set up for GitHub Pages via `.github/workflows/deploy.yml`, which publishes on push to `main`. Set `BASE_URL=/<repo>/` in the workflow if you're deploying under a project page (`https://<user>.github.io/<repo>/`); for a user/org root page (`https://<user>.github.io/`), leave it as `/` or omit.
 
-For iOS Safari to register the service worker and offer the proper
-"Add to Home Screen" PWA prompt, the site **must** be served over HTTPS
-(GitHub Pages serves over HTTPS by default).
-
-### Bootstrap and error reporting
-
-`index.html` does more than the usual Vite scaffold to keep iOS PWAs
-debuggable:
-
-- The entry `<script type="module">` is **not** rendered as a static tag.
-  A build-time plugin captures the bundle URL and emits
-  `window.__FT_ENTRY__ = {...}` at the start of `<head>`. An inline script
-  later in `<head>` runs `Promise.all([unregister-all-SWs, delete-all-caches])`
-  and only injects the module script after that resolves. This eliminates the
-  race where a stale service worker from a previous deploy intercepts the
-  entry-script fetch and serves the wrong content.
-- If the cleanup found something to clean up, the page reloads once
-  (sessionStorage-gated against a loop) so the post-reload fetch is
-  guaranteed unintercepted.
-- Uncaught errors and unhandled rejections are caught by capture-phase
-  listeners + `window.onerror` + a same-origin module-scope handler in
-  `main.tsx`. When any of them fires, a centered diagnostic card appears
-  with the error(s), the stack, and a log of the bootstrap (UA, build
-  timestamp, sessionStorage / localStorage / indexedDB availability,
-  PWA standalone state, SW/cache counts, cleanup status). Otherwise the
-  card stays hidden. All log lines are also `console.log`'d for remote
-  Safari → Mac inspection.
+For iOS Safari to register the service worker and offer the proper "Add to Home Screen" PWA prompt, the site **must** be served over HTTPS (GitHub Pages serves over HTTPS by default).
 
 ## Vehicle types & calculation rules
 
-| Type | Form fields | Electricity column on Dashboard | Equivalent km/l |
-|---|---|---|---|
-| `ice` | gas (l, €/l, total) | hidden | = gas km/l |
-| `hybrid` (HEV) | gas (l, €/l, total) | hidden | = gas km/l |
-| `phev` | gas + optional kWh/100 km & €/kWh since previous full fuel-up | shown | computed (see below) |
-| `ev` | kWh charged + €/kWh | shown (only column) | hidden |
-
-HEVs are intentionally treated as ICE: they recover energy from regen/engine
-and don't get a separate electric "bill", so there's nothing useful to track
-on the electricity axis.
+| Type           | Form fields                                                   | Electricity column on Dashboard | Equivalent km/l      |
+| -------------- | ------------------------------------------------------------- | ------------------------------- | -------------------- |
+| `ice`          | gas (l, €/l, total)                                           | hidden                          | = gas km/l           |
+| `hybrid` (HEV) | gas (l, €/l, total)                                           | hidden                          | = gas km/l           |
+| `phev`         | gas + optional kWh/100 km & €/kWh since previous full fuel-up | shown                           | computed (see below) |
+| `ev`           | kWh charged + €/kWh                                           | shown (only column)             | hidden               |
 
 ### Equivalent km/l (PHEV)
 
@@ -95,27 +50,6 @@ totalCost        = gasCost + electricityCost
 equivLiters      = totalCost / closing.gasPricePerLiter
 equivalentKmPerL = distanceKm / equivLiters
 ```
-
-Two important properties of this formula:
-
-1. **PHEV electricity comes from the *closing* full fuel-up's `phevKwhPer100Km`**,
-   read off the car's trip computer at fill-up, and applied to the entire
-   interval distance. Partial fuel-ups inside the interval contribute their
-   gas but their phev fields are ignored — the trip-computer figure
-   represents the whole "since previous full" window, so layering segments
-   would double-count. Reset the trip computer at each full fill-up to keep
-   the math honest.
-
-2. **The pump price is the closing entry's own `gasPricePerLiter`**, not
-   today's most recent price. Each historical data point is anchored to the
-   cost basis you actually paid that day. Adding a new fill-up at a different
-   price does *not* shift any earlier interval's equivalent.
-
-For ICE and HEV with no electricity data, `equivalentKmPerL = gasKmPerL`
-(they fall back to the same number).
-
-For EV, equivalent km/l is hidden — there's no gas-cost reference to convert
-against.
 
 **Average and best are computed over valid intervals**, not over aggregates:
 
@@ -148,19 +82,12 @@ against.
 The same per-interval philosophy applies to gas km/l and kWh/100 km, which
 use the standard distance- and energy-weighted formulas respectively.
 
-### Partials and missed fills
+### Partials fills
 
 A fuel-up marked `partial: true` doesn't close an interval — its liters and
 cost roll into the next full (non-partial) fuel-up's interval. So a sequence
 like `full → partial → partial → full` produces **one** interval spanning all
 four entries, with liters and cost summed.
-
-A fuel-up marked `missed: true` indicates that there was an unlogged fuel-up
-between the previous entry and this one. The interval ending at the missed
-entry has incomplete data (recorded fuel doesn't cover the actual distance),
-so it's **excluded from stats and the chart entirely** — no fake estimated
-value is synthesized. The next interval (between this entry and the following
-full fuel-up) is back to being reliable and counts normally.
 
 ## Backup format
 
@@ -174,33 +101,27 @@ A plain, Excel-compatible table. One row per fuel-up. Header row:
 date,vehicle,vehicleId,odometer,gasLiters,gasPricePerLiter,kWhCharged,kWhPrice,totalCost,partial,missed,phevKwhPer100Km,phevKwhPrice,notes,id
 ```
 
-| Column | Type | Notes |
-|---|---|---|
-| `date` | ISO 8601 string | e.g. `2026-05-11T10:30:00.000Z` |
-| `vehicle` | string | denormalized vehicle name for human reading; matched by `vehicleId` first |
-| `vehicleId` | string | uid; primary join key |
-| `odometer` | integer | km |
-| `gasLiters` | decimal or empty | litres of gas added — populated for ICE / HEV / PHEV |
-| `gasPricePerLiter` | decimal or empty | €/l (or $/l, £/l — whatever the chosen currency is) |
-| `kWhCharged` | decimal or empty | kWh added at this charging event — populated for EV |
-| `kWhPrice` | decimal or empty | €/kWh paid for that charge |
-| `totalCost` | decimal or empty | total paid for this entry's purchase |
-| `partial` | `true` / `false` | partial fill / partial charge — accumulates into the next full entry's interval |
-| `missed` | `true` / `false` | a fuel-up between the previous entry and this one wasn't logged — interval is excluded from stats |
-| `phevKwhPer100Km` | decimal or empty | PHEV-only: average kWh/100 km observed over the interval ending at this entry, read from the trip computer at the previous full fuel-up. Set only on full fuel-ups; values on partials are ignored by stats. |
-| `phevKwhPrice` | decimal or empty | PHEV-only: €/kWh paid for that electricity |
-| `notes` | string | newlines flattened to spaces on export to keep one row per fuel-up |
-| `id` | string | uid; empty cells get a fresh id on import (so you can add rows in Excel) |
+| Column             | Type             | Notes                                                                                                                                                                                                        |
+| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `date`             | ISO 8601 string  | e.g. `2026-05-11T10:30:00.000Z`                                                                                                                                                                              |
+| `vehicle`          | string           | denormalized vehicle name for human reading; matched by `vehicleId` first                                                                                                                                    |
+| `vehicleId`        | string           | uid; primary join key                                                                                                                                                                                        |
+| `odometer`         | integer          | km                                                                                                                                                                                                           |
+| `gasLiters`        | decimal or empty | litres of gas added — populated for ICE / HEV / PHEV                                                                                                                                                         |
+| `gasPricePerLiter` | decimal or empty | €/l (or $/l, £/l — whatever the chosen currency is)                                                                                                                                                          |
+| `kWhCharged`       | decimal or empty | kWh added at this charging event — populated for EV                                                                                                                                                          |
+| `kWhPrice`         | decimal or empty | €/kWh paid for that charge                                                                                                                                                                                   |
+| `totalCost`        | decimal or empty | total paid for this entry's purchase                                                                                                                                                                         |
+| `partial`          | `true` / `false` | partial fill / partial charge — accumulates into the next full entry's interval                                                                                                                              |
+| `missed`           | `true` / `false` | a fuel-up between the previous entry and this one wasn't logged — interval is excluded from stats                                                                                                            |
+| `phevKwhPer100Km`  | decimal or empty | PHEV-only: average kWh/100 km observed over the interval ending at this entry, read from the trip computer at the previous full fuel-up. Set only on full fuel-ups; values on partials are ignored by stats. |
+| `phevKwhPrice`     | decimal or empty | PHEV-only: €/kWh paid for that electricity                                                                                                                                                                   |
+| `notes`            | string           | newlines flattened to spaces on export to keep one row per fuel-up                                                                                                                                           |
+| `id`               | string           | uid; empty cells get a fresh id on import (so you can add rows in Excel)                                                                                                                                     |
 
 CSV quirks: standard RFC-style quoting. Commas/quotes/newlines in `notes` are
 escaped (`"He said ""hi"", really"`). Booleans accept `true`/`false`/`1`/`yes`
 case-insensitively on import.
-
-**Legacy CSVs** (from before schema v2) used the columns `liters`,
-`pricePerLiter`, `avgElectricityConsumption`, `avgElectricityCost`, plus a
-`missed` flag. The importer detects them by header sniffing and routes them
-to the new fields automatically; `missed` is ignored. The matched vehicle's
-type is used to decide whether legacy `liters` means gas litres or kWh.
 
 ### `fueltracker-config-YYYY-MM-DD.json` — vehicles + settings
 
@@ -332,5 +253,3 @@ round-trip including the lastBackup field scrub.
 - vitest for tests
 - No CSS framework — hand-rolled iOS-aligned styles via CSS variables for theming
 - No charting library — the SVG line chart is ~300 lines in `LineChart.tsx`
-
-Bundle size: ~290 kB raw, ~93 kB gzipped (one JS file).
