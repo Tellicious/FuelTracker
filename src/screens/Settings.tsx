@@ -283,8 +283,7 @@ export function SettingsScreen({ onToast }: Props) {
 
       <div className="section-title">About</div>
       <div className="card mono" style={{ fontSize: 13, color: 'var(--muted)' }}>
-        FuelTracker · schema v{settings.schemaVersion} · offline-first PWA
-      </div>
+        FuelTracker PWA v{settings.schemaVersion} · Tellicious 2026 </div>
     </div>
   );
 }
