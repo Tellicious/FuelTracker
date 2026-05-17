@@ -123,31 +123,3 @@ describe('CSV round-trip', () => {
     expect(() => csvToFuelups('totally,not,a,backup\n1,2,3,4\n', [])).toThrow();
   });
 });
-
-describe('legacy CSV import (schema v1)', () => {
-  it('routes legacy liters/pricePerLiter to gas fields for ICE vehicles', () => {
-    const legacy = [
-      'date,vehicle,vehicleId,odometer,liters,pricePerLiter,totalCost,partial,missed,avgElectricityConsumption,avgElectricityCost,notes,id',
-      `2024-01-01T00:00:00Z,Audi A3 TFSIe,v1,12000,30,1.85,55.5,false,false,12,0.28,test,e1`,
-    ].join('\n');
-    const { fuelups } = csvToFuelups(legacy, [vehicle]);
-    expect(fuelups[0].gasLiters).toBe(30);
-    expect(fuelups[0].gasPricePerLiter).toBe(1.85);
-    expect(fuelups[0].kWhCharged).toBeNull();
-    expect(fuelups[0].phevKwhPer100Km).toBe(12);
-    expect(fuelups[0].phevKwhPrice).toBe(0.28);
-
-  });
-
-  it('routes legacy liters to kWhCharged for EV vehicles', () => {
-    const legacy = [
-      'date,vehicle,vehicleId,odometer,liters,pricePerLiter,totalCost,partial,missed,avgElectricityConsumption,avgElectricityCost,notes,id',
-      `2024-01-01T00:00:00Z,Tesla,v-ev,10000,45,0.3,13.5,false,false,,,,e2`,
-    ].join('\n');
-    const { fuelups } = csvToFuelups(legacy, [evVehicle]);
-    expect(fuelups[0].kWhCharged).toBe(45);
-    expect(fuelups[0].kWhPrice).toBe(0.3);
-    expect(fuelups[0].gasLiters).toBeNull();
-    expect(fuelups[0].gasPricePerLiter).toBeNull();
-  });
-});
