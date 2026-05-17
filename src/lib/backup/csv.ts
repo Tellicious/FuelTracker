@@ -141,9 +141,9 @@ export interface CsvParseResult {
 
 // Parse a CSV string into fuel-up rows + a list of unknown vehicle names
 // the caller will need to create stubs for. Validates a couple of required
-// columns up front so we fail fast on completely-wrong files. Supports
-// importing v1 legacy CSVs (single `liters`/`pricePerLiter` columns) as
-// well as the current v2 split-column format.
+// columns up front so we fail fast on completely-wrong files. Expects the
+// current split-column format (gasLiters/gasPricePerLiter, kWhCharged/
+// kWhPrice, phevKwhPer100Km/phevKwhPrice).
 export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
   if (lines.length < 1) throw new Error('CSV is empty.');
@@ -174,14 +174,7 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
     kWhPrice: col('kWhPrice'),
     phevKwhPer100Km: col('phevKwhPer100Km'),
     phevKwhPrice: col('phevKwhPrice'),
-
-    liters: col('liters'),
-    pricePerLiter: col('pricePerLiter'),
-    avgElectricityConsumption: col('avgElectricityConsumption'),
-    avgElectricityCost: col('avgElectricityCost'),
   };
-
-  const isLegacy = idx.gasLiters < 0 && idx.liters >= 0;
 
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const byName = new Map(vehicles.map((v) => [v.name.toLowerCase(), v]));
@@ -197,13 +190,10 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
 
 
     let resolvedVehicleId: string;
-    let matchedVehicle: Vehicle | undefined;
     if (rawVehicleId && byId.has(rawVehicleId)) {
       resolvedVehicleId = rawVehicleId;
-      matchedVehicle = byId.get(rawVehicleId);
     } else if (rawVehicleName && byName.has(rawVehicleName.toLowerCase())) {
-      matchedVehicle = byName.get(rawVehicleName.toLowerCase())!;
-      resolvedVehicleId = matchedVehicle.id;
+      resolvedVehicleId = byName.get(rawVehicleName.toLowerCase())!.id;
     } else if (rawVehicleId) {
       resolvedVehicleId = rawVehicleId;
       if (rawVehicleName) unknownNames.add(rawVehicleName);
@@ -220,40 +210,12 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
       throw new Error(`Row ${i + 1}: invalid odometer "${odometerStr}".`);
     }
 
-
-    let gasLiters: number | null;
-    let gasPricePerLiter: number | null;
-    let kWhCharged: number | null;
-    let kWhPrice: number | null;
-    let phevKwhPer100Km: number | null;
-    let phevKwhPrice: number | null;
-
-    if (isLegacy) {
-
-      const legacyAmount = parseNumOrNull(get(idx.liters));
-      const legacyUnitPrice = parseNumOrNull(get(idx.pricePerLiter));
-      const isEv = matchedVehicle?.type === 'ev';
-      if (isEv) {
-        kWhCharged = legacyAmount;
-        kWhPrice = legacyUnitPrice;
-        gasLiters = null;
-        gasPricePerLiter = null;
-      } else {
-        gasLiters = legacyAmount;
-        gasPricePerLiter = legacyUnitPrice;
-        kWhCharged = null;
-        kWhPrice = null;
-      }
-      phevKwhPer100Km = parseNumOrNull(get(idx.avgElectricityConsumption));
-      phevKwhPrice = parseNumOrNull(get(idx.avgElectricityCost));
-    } else {
-      gasLiters = parseNumOrNull(get(idx.gasLiters));
-      gasPricePerLiter = parseNumOrNull(get(idx.gasPricePerLiter));
-      kWhCharged = parseNumOrNull(get(idx.kWhCharged));
-      kWhPrice = parseNumOrNull(get(idx.kWhPrice));
-      phevKwhPer100Km = parseNumOrNull(get(idx.phevKwhPer100Km));
-      phevKwhPrice = parseNumOrNull(get(idx.phevKwhPrice));
-    }
+    const gasLiters = parseNumOrNull(get(idx.gasLiters));
+    const gasPricePerLiter = parseNumOrNull(get(idx.gasPricePerLiter));
+    const kWhCharged = parseNumOrNull(get(idx.kWhCharged));
+    const kWhPrice = parseNumOrNull(get(idx.kWhPrice));
+    const phevKwhPer100Km = parseNumOrNull(get(idx.phevKwhPer100Km));
+    const phevKwhPrice = parseNumOrNull(get(idx.phevKwhPrice));
 
     const notesRaw = get(idx.notes);
     out.push({
