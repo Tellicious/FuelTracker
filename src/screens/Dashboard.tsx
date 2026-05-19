@@ -22,11 +22,12 @@ interface ColumnDef {
   unitLine: string;
 }
 
-// Dashboard screen. Shows three top-line KPIs (Tracked km / Avg cost-per-km
-// / Last cost-per-km) and a consumption matrix beneath them (gas km/l,
-// electricity kWh/100km, equivalent km/l × last / average / best). Below
-// the numbers, the LineChart visualises consumption over time with
-// pan/pinch + a smoothing toggle. Empty state shown when there are fewer
+// Dashboard screen. Shows six top-line KPIs in a 2×3 grid — row 1:
+// Tracked km / Fill-ups (or Charges) / Total cost; row 2: Avg km per
+// fill-up / Avg cost-per-km / Last cost-per-km. Below them, a
+// consumption matrix (gas km/l, electricity kWh/100km, equivalent
+// km/l × last / average / best), then the LineChart with pan/pinch
+// and a smoothing toggle. Empty state shown when there are fewer
 // than two full fill-ups (no completed intervals yet).
 export function DashboardScreen({
   settings,
@@ -147,29 +148,51 @@ export function DashboardScreen({
       <div style={{ height: 12 }} />
 
       {}
-      <div className="kpi-grid">
-        <KpiCard
-          label="Tracked km"
-          value={stats.totalTrackedKm > 0 ? fmtNumber(stats.totalTrackedKm, 0) : '—'}
-          accent
-        />
-        <KpiCard
-          label={`Avg ${currencySymbol(settings.currency)}/km`}
-          value={
-            stats.avgEurPerKm != null
-              ? fmtMoney(stats.avgEurPerKm, settings.currency, 3)
-              : '—'
-          }
-        />
-        <KpiCard
-          label={`Last ${currencySymbol(settings.currency)}/km`}
-          value={
-            stats.lastEurPerKm != null
-              ? fmtMoney(stats.lastEurPerKm, settings.currency, 3)
-              : '—'
-          }
-        />
-      </div>
+      {(() => {
+  const isEv = vehicleType === 'ev';
+  const refuelLabel = isEv ? 'Charges' : 'Fill-ups';
+  const avgKmLabel = isEv ? 'Avg km / charge' : 'Avg km / fill-up';
+  const sym = currencySymbol(settings.currency);
+  return (
+    <div className="kpi-grid">
+      {/* Row 1 */}
+      <KpiCard
+        label="Tracked km"
+        value={stats.totalTrackedKm > 0 ? fmtNumber(stats.totalTrackedKm, 0) : '—'}
+        accent
+      />
+      <KpiCard
+        label={refuelLabel}
+        value={stats.totalRefuels > 0 ? fmtNumber(stats.totalRefuels, 0) : '—'}
+      />
+      <KpiCard
+        label="Total cost"
+        value={stats.totalCost > 0 ? fmtMoney(stats.totalCost, settings.currency, 2) : '—'}
+      />
+      {/* Row 2 */}
+      <KpiCard
+        label={avgKmLabel}
+        value={stats.avgKmPerRefuel != null ? fmtNumber(stats.avgKmPerRefuel, 0) : '—'}
+      />
+      <KpiCard
+        label={`Avg ${sym}/km`}
+        value={
+          stats.avgEurPerKm != null
+            ? fmtMoney(stats.avgEurPerKm, settings.currency, 3)
+            : '—'
+        }
+      />
+      <KpiCard
+        label={`Last ${sym}/km`}
+        value={
+          stats.lastEurPerKm != null
+            ? fmtMoney(stats.lastEurPerKm, settings.currency, 3)
+            : '—'
+        }
+      />
+    </div>
+  );
+})()}
 
       {}
       {columns.length > 0 && (

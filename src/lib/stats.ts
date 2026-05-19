@@ -16,12 +16,30 @@ export interface Interval {
   equivalentKmPerL: number;
   eurPerKm: number;
   endEntryId: string;
+  // IDs of every entry that contributed to this interval (anchor + every
+  // entry from anchor+1 to closer, inclusive). Used by computeDashboard
+  // to count how many fill-ups participated in the valid intervals.
+  entryIds: string[];
 }
 
 export interface DashboardStats {
   totalTrackedKm: number;
   avgEurPerKm: number | null;
   lastEurPerKm: number | null;
+
+  // Count of distinct entries that participated in any valid interval.
+  // Kept coherent with totalTrackedKm — only entries inside non-skipped
+  // intervals count. The "Fill-ups" / "Charges" pill on the Dashboard.
+  totalRefuels: number;
+
+  // Sum of gas + electricity spend across the same set of entries used
+  // for totalTrackedKm, plus the PHEV-imputed electricity cost from
+  // valid intervals (PHEV electricity isn't a separate entry).
+  totalCost: number;
+
+  // totalTrackedKm / totalRefuels, or null when totalRefuels === 0.
+  // The "Avg km / fill-up" pill on the Dashboard.
+  avgKmPerRefuel: number | null;
 
   lastKmPerL: number | null;
   avgKmPerL: number | null;
@@ -41,8 +59,6 @@ export interface DashboardStats {
   intervals: Interval[];
 }
 
-// Sort fuel-up entries chronologically (date ASC), breaking date ties by
-// odometer reading so multiple same-day entries are still in physical order.
 export function sortFuelUps(entries: FuelUp[]): FuelUp[] {
   return [...entries].sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? -1 : 1;
@@ -50,13 +66,6 @@ export function sortFuelUps(entries: FuelUp[]): FuelUp[] {
   });
 }
 
-// Compute the list of full-to-full fuel-up intervals from a vehicle's raw
-// entries. Partial fill-ups roll INTO the next full one's interval (their
-// gas/cost contribute). Intervals containing a "missed" entry are excluded
-// entirely (no estimation). The anchor entry's own gas is excluded — that
-// gas was consumed during the *previous* interval. For PHEVs, electricity
-// is computed from the closing entry's `phevKwhPer100Km` × the FULL interval
-// distance (the trip computer reads "since last full fill-up").
 export function computeIntervals(
   entries: FuelUp[],
   vehicleType: VehicleType = 'ice',
@@ -79,24 +88,15 @@ export function computeIntervals(
     let kWhUsed = 0;
     let gasCost = 0;
     let electricityCost = 0;
-
-
-
-
     let containsMissed = false;
 
     for (let j = anchorIdx + 1; j <= i; j++) {
       const e = sorted[j];
       if (e.missed) containsMissed = true;
-
       if (isEv) {
-
-
         if (e.kWhCharged != null) kWhUsed += e.kWhCharged;
         if (e.totalCost != null) electricityCost += e.totalCost;
       } else {
-
-
         if (e.gasLiters != null) gasLitersUsed += e.gasLiters;
         if (e.totalCost != null) gasCost += e.totalCost;
       }
@@ -109,12 +109,6 @@ export function computeIntervals(
       continue;
     }
 
-
-
-
-
-
-
     if (isPhev && end.phevKwhPer100Km != null) {
       const kWh = (end.phevKwhPer100Km / 100) * distanceKm;
       kWhUsed += kWh;
@@ -126,13 +120,6 @@ export function computeIntervals(
     const kmPerL = gasLitersUsed > 0 ? distanceKm / gasLitersUsed : 0;
     const totalCost = gasCost + electricityCost;
     const kWhPer100Km = kWhUsed > 0 ? (kWhUsed / distanceKm) * 100 : 0;
-
-
-
-
-
-
-
 
     let equivalentKmPerL = 0;
     if (isPhev) {
@@ -161,6 +148,7 @@ export function computeIntervals(
       equivalentKmPerL,
       eurPerKm,
       endEntryId: end.id,
+      entryIds: sorted.slice(anchorIdx, i + 1).map((e) => e.id),
     });
 
     anchorIdx = i;
@@ -169,12 +157,6 @@ export function computeIntervals(
   return intervals;
 }
 
-// Build the dashboard stats object for a vehicle. Aggregates all valid
-// intervals (excluding missed segments) into totals: tracked km, gas km/l
-// distance-weighted average, electricity kWh/100km energy-weighted average,
-// equivalent km/l using avgPumpPrice/costPerKm formula, plus the last/best
-// values for each metric. Returns an empty-stats stub when there are no
-// entries yet.
 export function computeDashboard(
   entries: FuelUp[],
   vehicleType: VehicleType = 'ice',
@@ -184,20 +166,40 @@ export function computeDashboard(
 
   const intervals = computeIntervals(sorted, vehicleType);
 
-
-
-
-
-
-
-
-
   const totalTrackedKm = intervals.reduce((s, iv) => s + iv.distanceKm, 0);
   const totalCostTracked = intervals.reduce((s, iv) => s + iv.totalCost, 0);
   const avgEurPerKm = totalTrackedKm > 0 ? totalCostTracked / totalTrackedKm : null;
 
-  const last = intervals[intervals.length - 1] ?? null;
+  // Count of distinct entries that participated in any valid interval.
+  // Anchors are shared between consecutive intervals — the Set collapses
+  // those naturally so each fill-up is counted once.
+  const usedEntryIds = new Set<string>();
+  for (const iv of intervals) {
+    for (const id of iv.entryIds) usedEntryIds.add(id);
+  }
+  const totalRefuels = usedEntryIds.size;
 
+  // Sum the receipt costs of the entries that participated in valid
+  // intervals (this naturally includes the very first anchor's cost,
+  // which doesn't appear in any interval.totalCost). For PHEV, add the
+  // imputed electricity cost on top — that's not stored on any entry, it
+  // comes from interval.electricityCost. For ICE/HEV electricity is
+  // always 0; for EV the entries already store electricity as totalCost,
+  // so adding interval.electricityCost would double-count.
+  const usedEntries = entries.filter((e) => usedEntryIds.has(e.id));
+  const sumOfEntryCosts = usedEntries.reduce(
+    (s, e) => s + (e.totalCost ?? 0),
+    0,
+  );
+  const phevImputedElectricity =
+    vehicleType === 'phev'
+      ? intervals.reduce((s, iv) => s + iv.electricityCost, 0)
+      : 0;
+  const totalCost = sumOfEntryCosts + phevImputedElectricity;
+
+  const avgKmPerRefuel = totalRefuels > 0 ? totalTrackedKm / totalRefuels : null;
+
+  const last = intervals[intervals.length - 1] ?? null;
 
   const intervalsWithGas = intervals.filter((iv) => iv.gasLitersUsed > 0);
   const avgKmPerL =
@@ -206,7 +208,6 @@ export function computeDashboard(
         intervalsWithGas.reduce((s, iv) => s + iv.gasLitersUsed, 0)
       : null;
   const bestGas = pickBest(intervals, (iv) => iv.kmPerL, 'max');
-
 
   const intervalsWithKwh = intervals.filter((iv) => iv.kWhUsed > 0);
   const avgKWhPer100Km =
@@ -225,30 +226,10 @@ export function computeDashboard(
     }
   }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   let avgEquivalentKmPerL: number | null = null;
   {
     const totalGasCost = intervals.reduce((s, iv) => s + iv.gasCost, 0);
     const totalGasQuantity = intervals.reduce((s, iv) => s + iv.gasLitersUsed, 0);
-
-
     if (totalGasQuantity > 0 && totalTrackedKm > 0 && totalCostTracked > 0) {
       const avgPumpPrice = totalGasCost / totalGasQuantity;
       const costPerKm = totalCostTracked / totalTrackedKm;
@@ -263,29 +244,25 @@ export function computeDashboard(
     totalTrackedKm,
     avgEurPerKm,
     lastEurPerKm: last?.eurPerKm ?? null,
-
+    totalRefuels,
+    totalCost,
+    avgKmPerRefuel,
     lastKmPerL: last && last.gasLitersUsed > 0 ? last.kmPerL : null,
     avgKmPerL,
     bestKmPerL: bestGas?.kmPerL ?? null,
     bestKmPerLDate: bestGas?.toDate ?? null,
-
     lastKWhPer100Km,
     avgKWhPer100Km,
     bestKWhPer100Km: bestElec?.kWhPer100Km ?? null,
     bestKWhPer100KmDate: bestElec?.toDate ?? null,
-
     lastEquivalentKmPerL: last && last.equivalentKmPerL > 0 ? last.equivalentKmPerL : null,
     avgEquivalentKmPerL,
     bestEquivalentKmPerL: bestEquiv?.equivalentKmPerL ?? null,
     bestEquivalentKmPerLDate: bestEquiv?.toDate ?? null,
-
     intervals,
   };
 }
 
-// Find the interval with the lowest or highest value of some metric.
-// Ignores zero/negative values (treats them as missing). Returns null when
-// there are no valid intervals.
 function pickBest(
   intervals: Interval[],
   selector: (iv: Interval) => number,
@@ -304,14 +281,14 @@ function pickBest(
   return best;
 }
 
-// Default-zero stats object for vehicles with no entries yet. Keeps the UI
-// from having to special-case empty state at every callsite — components
-// just check for null metrics.
 function emptyDashboard(): DashboardStats {
   return {
     totalTrackedKm: 0,
     avgEurPerKm: null,
     lastEurPerKm: null,
+    totalRefuels: 0,
+    totalCost: 0,
+    avgKmPerRefuel: null,
     lastKmPerL: null,
     avgKmPerL: null,
     bestKmPerL: null,
@@ -326,27 +303,4 @@ function emptyDashboard(): DashboardStats {
     bestEquivalentKmPerLDate: null,
     intervals: [],
   };
-}
-
-// Centered moving average over a numeric series. Nulls remain null in the
-// output (so gaps in data don't get filled in), but a value's window still
-// includes any non-null neighbors that fall within ±half. The default
-// window is 5, which feels right for fuel-economy traces (smooths out the
-// jitter from individual fill-ups without erasing real trends).
-export function smoothSeries(values: (number | null)[], window = 5): (number | null)[] {
-  const half = Math.floor(window / 2);
-  return values.map((v, i) => {
-    if (v == null) return null;
-    let sum = 0;
-    let n = 0;
-    for (let j = -half; j <= half; j++) {
-      const k = i + j;
-      if (k < 0 || k >= values.length) continue;
-      const x = values[k];
-      if (x == null) continue;
-      sum += x;
-      n += 1;
-    }
-    return n > 0 ? sum / n : v;
-  });
 }
