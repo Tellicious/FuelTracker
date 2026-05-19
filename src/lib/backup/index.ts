@@ -1,4 +1,4 @@
-import { db, ensureSettings, uid } from '../../db/db';
+import { db, ensureSettings, getSettings, uid } from '../../db/db';
 import { SCHEMA_VERSION, type FuelUp, type Settings, type Vehicle } from '../../db/types';
 import { csvToFuelups, fuelupsToCsv } from './csv';
 import { configToJson, jsonToConfig } from './json';
@@ -22,7 +22,7 @@ export async function buildPayload(): Promise<BackupPayload> {
   const [vehicles, fuelups, settings] = await Promise.all([
     db.vehicles.toArray(),
     db.fuelups.toArray(),
-    ensureSettings(),
+    getSettings(),
   ]);
   return {
     schemaVersion: SCHEMA_VERSION,

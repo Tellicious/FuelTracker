@@ -9,7 +9,8 @@ Offline-first fuel & energy tracker for ICE, HEV, PHEV and EV vehicles. Built as
 - **Cost-equivalent km/l for PHEVs** — converts your real fuel + electricity spend into the equivalent number of liters you'd have bought at the current pump price, so you can compare PHEV to ICE on a fair money basis.
 - **iOS-aligned look** — SF system font, iOS systemGreen palette, sentence-case labels, Auto/Light/Dark theme picker. Status bar tint matches.
 - **Offline / installable** — runs without network once installed; "Add to Home Screen" on iOS Safari gives you an app icon.
-- **Manual backups** — Settings → Back up now exports two files (CSV + JSON). No automatic cloud sync; you decide where they go.
+- **Manual backups** — Settings → Back up now exports two files (CSV + JSON). No automatic cloud sync.
+- **Consistency warnings on entry** — soft checks for abnormal consumption, suspicious unit prices, oversized odometer jumps, out-of-order dates, and duplicates with thresholds tunable in Settings.
 
 ## Quick start
 
@@ -196,18 +197,23 @@ src/
   main.tsx             bootstrap: init settings → apply theme → render under
                        a top-level ErrorBoundary
   db/
-    db.ts              Dexie schema (v1→v2 migration), initializeSettings,
+    db.ts              Dexie schema, initializeSettings,
                        getSettings
-    types.ts           FuelUp / Vehicle / Settings, VehicleType
-  lib/
+    types.ts           FuelUp / Vehicle / Settings, VehicleType, RecordField  lib/
     derive.ts          2-of-3 reconciliation for amount/unitPrice/totalCost
     stats.ts           computeIntervals, computeDashboard, sortFuelUps
     format.ts          fmtNumber, fmtMoney, fmtDate, currencySymbol
     units.ts           consumption-unit conversions (km/l ↔ L/100km ↔ mpg)
     theme.ts           applyThemeFromSettings, watchSystemTheme
     storage.ts         safeGet/safeSet/safeRemove wrappers around localStorage
-                       (iOS Safari can throw on storage access in some modes)
+    records-fields.ts  RECORD_FIELDS catalog + per-vehicle-type allowed sets;
+                       drives the configurable Records-row display
+    checks.ts          consistency warnings (consumption / unit price /
+                       distance / date order / duplicate) for AddEntry
     backup/
+      index.ts         BackupPayload, exportBackup, importFile, payloadHash
+      csv.ts           CSV serialisation, schema-v1-legacy import shim
+      json.ts          JSON config serialisation    backup/
       index.ts         BackupPayload, exportBackup, importFile, payloadHash
       csv.ts           CSV serialisation, schema-v1-legacy import shim
       json.ts          JSON config serialisation
@@ -235,15 +241,20 @@ src/
 ## Testing
 
 ```bash
-npm test          # 28 tests across src/lib/*.test.ts
+npm test          # 46 tests across src/lib/*.test.ts
 ```
 
 Coverage spans 2-of-3 derivation, vehicle-type branching (HEV-as-ICE, EV,
 PHEV), interval/aggregate stats including the user-bug regressions (partials
 rolling into intervals, missed entries excluded, closing-entry-priced
 equivalent, totalTrackedKm excluding missed segments), CSV round-trip with
-notes containing commas and quotes, legacy v1 CSV import, and JSON config
-round-trip including the lastBackup field scrub.
+notes containing commas and quotes, JSON config round-trip including the
+lastBackup field scrub and the v3 settings fields (per-vehicle-type Records
+display config + warning thresholds), and the five AddEntry consistency
+checks (consumption ±% vs running average, unit price ±% vs recent median,
+distance vs avg interval, out-of-order date, ±time/±km duplicate detection)
+including their minimum-history skip conditions and multi-warning
+aggregation.
 
 ## Tech
 
