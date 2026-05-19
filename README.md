@@ -241,20 +241,24 @@ src/
 ## Testing
 
 ```bash
-npm test          # 46 tests across src/lib/*.test.ts
+npm test          # 52 tests across src/lib/**/*.test.ts
 ```
 
 Coverage spans 2-of-3 derivation, vehicle-type branching (HEV-as-ICE, EV,
-PHEV), interval/aggregate stats including the user-bug regressions (partials
-rolling into intervals, missed entries excluded, closing-entry-priced
-equivalent, totalTrackedKm excluding missed segments), CSV round-trip with
-notes containing commas and quotes, JSON config round-trip including the
-lastBackup field scrub and the v3 settings fields (per-vehicle-type Records
-display config + warning thresholds), and the five AddEntry consistency
-checks (consumption ±% vs running average, unit price ±% vs recent median,
-distance vs avg interval, out-of-order date, ±time/±km duplicate detection)
-including their minimum-history skip conditions and multi-warning
-aggregation.
+PHEV), interval/aggregate stats including the user-bug regressions
+(partials rolling into intervals, missed entries excluded,
+closing-entry-priced equivalent, totalTrackedKm excluding missed
+segments), the dashboard pill metrics (totalRefuels / totalCost /
+avgKmPerRefuel — including PHEV imputed-electricity addition, EV
+no-double-counting, and exclusion of dangling entries that never closed
+an interval), CSV round-trip with notes containing commas and quotes,
+JSON config round-trip including the lastBackup field scrub and the new
+optional settings fields (per-vehicle-type Records display config +
+warning thresholds), and the five AddEntry consistency checks
+(consumption ±% vs running average, unit price ±% vs recent median,
+distance vs avg interval, out-of-order date, ±time/±km duplicate
+detection) including their minimum-history skip conditions and
+multi-warning aggregation.
 
 ## Tech
 

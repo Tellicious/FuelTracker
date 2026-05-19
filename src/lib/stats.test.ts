@@ -49,13 +49,8 @@ describe('computeIntervals', () => {
   });
 
   it('PHEV: closing entry phev rate applies to the FULL interval, even with a partial in between', () => {
-
-
-
-
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-03-01T00:00:00Z', odometer: 43515, gasLiters: 30, gasPricePerLiter: 1.70, totalCost: 51.0 }),
-
       mkEntry({ date: '2026-04-10T00:00:00Z', odometer: 44110, gasLiters: 12, gasPricePerLiter: 1.71, totalCost: 20.52, partial: true }),
       mkEntry({
         date: '2026-04-26T15:33:00Z',
@@ -71,20 +66,13 @@ describe('computeIntervals', () => {
     expect(ivs.length).toBe(1);
     const iv = ivs[0];
     expect(iv.distanceKm).toBe(752);
-
-
-
     expect(iv.kWhUsed).toBeCloseTo(28.576, 2);
     expect(iv.electricityCost).toBeCloseTo(7.7155, 3);
-
-
     expect(iv.gasLitersUsed).toBeCloseTo(37.63, 2);
     expect(iv.gasCost).toBeCloseTo(64.53, 2);
   });
 
   it('PHEV: equivalent km/l matches the bug report (752 km, 25.63 L, 3.80 kWh/100km)', () => {
-
-
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-03-01T00:00:00Z', odometer: 43515, gasLiters: 30, gasPricePerLiter: 1.70, totalCost: 51.0 }),
       mkEntry({
@@ -99,15 +87,10 @@ describe('computeIntervals', () => {
     ];
     const ivs = computeIntervals(entries, 'phev');
     expect(ivs.length).toBe(1);
-
     expect(ivs[0].equivalentKmPerL).toBeCloseTo(24.96, 1);
   });
 
   it('PHEV: a later, higher-priced entry must NOT change earlier intervals equivalent km/l', () => {
-
-
-
-
     const userBugEntries: FuelUp[] = [
       mkEntry({ date: '2026-03-01T00:00:00Z', odometer: 43515, gasLiters: 30, gasPricePerLiter: 1.70, totalCost: 51.0 }),
       mkEntry({
@@ -120,8 +103,6 @@ describe('computeIntervals', () => {
         phevKwhPrice: 0.27,
       }),
     ];
-
-
     const withLaterExpensive: FuelUp[] = [
       ...userBugEntries,
       mkEntry({
@@ -134,20 +115,16 @@ describe('computeIntervals', () => {
         phevKwhPrice: 0.27,
       }),
     ];
-
     const before = computeIntervals(userBugEntries, 'phev');
     const after = computeIntervals(withLaterExpensive, 'phev');
-
-
     expect(after[0].equivalentKmPerL).toBeCloseTo(before[0].equivalentKmPerL, 3);
     expect(after[0].equivalentKmPerL).toBeCloseTo(24.96, 1);
   });
+
   it('skips intervals containing a missed entry (no fake estimate)', () => {
     const entries: FuelUp[] = [
-
       mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
       mkEntry({ date: '2026-01-30', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
-
       mkEntry({
         date: '2026-02-15',
         odometer: 11500,
@@ -156,11 +133,9 @@ describe('computeIntervals', () => {
         totalCost: 60.8,
         missed: true,
       }),
-
       mkEntry({ date: '2026-03-01', odometer: 12000, gasLiters: 25, gasPricePerLiter: 1.9, totalCost: 47.5 }),
     ];
     const ivs = computeIntervals(entries, 'ice');
-
     expect(ivs.length).toBe(2);
     expect(ivs[0].fromOdometer).toBe(10000);
     expect(ivs[0].toOdometer).toBe(10500);
@@ -189,11 +164,6 @@ describe('computeDashboard', () => {
   });
 
   it('totalTrackedKm excludes km from missed intervals', () => {
-
-
-
-
-
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
       mkEntry({ date: '2026-01-30', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
@@ -233,20 +203,6 @@ describe('computeDashboard', () => {
   });
 
   it('equivalent km/l avg uses the global (avgPumpPrice / costPerKm) formula', () => {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
       mkEntry({ date: '2026-01-15', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
@@ -269,17 +225,13 @@ describe('computeDashboard', () => {
       (totalGasCost / totalGasQuantity) / (totalOverallCost / totalKm);
     expect(d.avgEquivalentKmPerL).toBeCloseTo(expected, 2);
     expect(d.avgEquivalentKmPerL).toBeCloseTo(14.98, 2);
-
     const equiv1 = d.intervals[0].equivalentKmPerL;
     const equiv2 = d.intervals[1].equivalentKmPerL;
     expect(d.bestEquivalentKmPerL).toBeCloseTo(Math.max(equiv1, equiv2), 2);
   });
 
   it('equivalent avg respects partials (rolled in) and missed (excluded)', () => {
-
-
     const entries: FuelUp[] = [
-
       mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.70, totalCost: 51.0 }),
       mkEntry({ date: '2026-01-10', odometer: 10300, gasLiters: 18, gasPricePerLiter: 1.70, totalCost: 30.6, partial: true }),
       mkEntry({
@@ -291,7 +243,6 @@ describe('computeDashboard', () => {
         phevKwhPer100Km: 5,
         phevKwhPrice: 0.25,
       }),
-
       mkEntry({
         date: '2026-02-15',
         odometer: 11500,
@@ -300,7 +251,6 @@ describe('computeDashboard', () => {
         totalCost: 60.8,
         missed: true,
       }),
-
       mkEntry({
         date: '2026-03-01',
         odometer: 12000,
@@ -313,21 +263,6 @@ describe('computeDashboard', () => {
     ];
     const d = computeDashboard(entries, 'phev');
     expect(d.intervals.length).toBe(2);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     const expected = (98.74 / 55) / (116.99 / 1000);
     expect(d.avgEquivalentKmPerL).toBeCloseTo(expected, 2);
   });
@@ -367,5 +302,104 @@ describe('large dataset', () => {
     const d = computeDashboard(entries);
     expect(d.totalTrackedKm).toBe(99 * 500);
     expect(d.intervals.length).toBe(99);
+  });
+});
+
+describe('computeDashboard — totalRefuels / totalCost / avgKmPerRefuel', () => {
+  it('counts all entries that participated in valid intervals, coherent with tracked km', () => {
+    // 4 entries all full → 3 valid intervals → all 4 entries participate.
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({ date: '2026-01-15', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({ date: '2026-02-01', odometer: 11000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({ date: '2026-02-15', odometer: 11500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+    ];
+    const d = computeDashboard(entries, 'ice');
+    expect(d.totalRefuels).toBe(4);
+    expect(d.totalCost).toBeCloseTo(55.5 * 4, 2);
+    expect(d.avgKmPerRefuel).toBeCloseTo(1500 / 4, 2);
+  });
+
+  it('excludes entries inside a skipped (missed) interval from the count', () => {
+    // 4 entries, one missed. Intervals: (0→1) valid, (1→2) skipped (entry 2 missed),
+    // (2→3) valid (entry 2 becomes anchor of next interval). So entries 0,1,2,3
+    // all participate in valid intervals (entry 2 as anchor of the second one).
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({ date: '2026-01-30', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({
+        date: '2026-02-15',
+        odometer: 11500,
+        gasLiters: 32,
+        gasPricePerLiter: 1.9,
+        totalCost: 60.8,
+        missed: true,
+      }),
+      mkEntry({ date: '2026-03-01', odometer: 12000, gasLiters: 25, gasPricePerLiter: 1.9, totalCost: 47.5 }),
+    ];
+    const d = computeDashboard(entries, 'ice');
+    expect(d.intervals.length).toBe(2);
+    expect(d.totalRefuels).toBe(4);
+    expect(d.totalCost).toBeCloseTo(55.5 + 55.5 + 60.8 + 47.5, 2);
+    expect(d.avgKmPerRefuel).toBeCloseTo(d.totalTrackedKm / 4, 2);
+  });
+
+  it('drops dangling entries that never closed an interval', () => {
+    // 3 entries, last is a partial that hasn't closed → 1 valid interval,
+    // 2 entries participated. Third entry dangles.
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({ date: '2026-01-15', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({ date: '2026-01-25', odometer: 10700, gasLiters: 10, gasPricePerLiter: 1.85, totalCost: 18.5, partial: true }),
+    ];
+    const d = computeDashboard(entries, 'ice');
+    expect(d.intervals.length).toBe(1);
+    expect(d.totalRefuels).toBe(2);
+    expect(d.totalCost).toBeCloseTo(55.5 + 55.5, 2);
+    expect(d.avgKmPerRefuel).toBeCloseTo(500 / 2, 2);
+  });
+
+  it('PHEV: totalCost adds imputed electricity to gas-cost receipts', () => {
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+      mkEntry({
+        date: '2026-02-01',
+        odometer: 11000,
+        gasLiters: 30,
+        gasPricePerLiter: 1.85,
+        totalCost: 55.5,
+        phevKwhPer100Km: 10,
+        phevKwhPrice: 0.25,
+      }),
+    ];
+    const d = computeDashboard(entries, 'phev');
+    // Gas: 55.5 × 2 = 111. Imputed electricity: (10/100) × 1000 × 0.25 = 25.
+    expect(d.totalCost).toBeCloseTo(111 + 25, 2);
+    expect(d.totalRefuels).toBe(2);
+  });
+
+  it('EV: totalCost does not double-count electricity', () => {
+    // EV: each entry.totalCost IS the electricity cost. The interval's
+    // electricityCost is the sum of those receipts — adding it again
+    // would double-count. The implementation should skip the PHEV-style
+    // imputation for EVs.
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, kWhCharged: 50, kWhPrice: 0.30, totalCost: 15 }),
+      mkEntry({ date: '2026-01-15', odometer: 10500, kWhCharged: 60, kWhPrice: 0.30, totalCost: 18 }),
+      mkEntry({ date: '2026-02-01', odometer: 11000, kWhCharged: 50, kWhPrice: 0.30, totalCost: 15 }),
+    ];
+    const d = computeDashboard(entries, 'ev');
+    expect(d.totalCost).toBeCloseTo(15 + 18 + 15, 2);
+    expect(d.totalRefuels).toBe(3);
+  });
+
+  it('returns 0 / null when no valid intervals exist (single entry)', () => {
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
+    ];
+    const d = computeDashboard(entries, 'ice');
+    expect(d.totalRefuels).toBe(0);
+    expect(d.totalCost).toBe(0);
+    expect(d.avgKmPerRefuel).toBeNull();
   });
 });
