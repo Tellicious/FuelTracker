@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { db, uid } from '../db/db';
 import type { FuelUp, Settings, Vehicle, VehicleType } from '../db/types';
 import { reconcile, type DeriveField, type DeriveValues } from '../lib/derive';
+import { runAllChecks, type CheckContext, type Warning } from '../lib/checks';
 import { currencySymbol, fmtMoney, fromInputDateTime, parseDecimalInput, toInputDateTime } from '../lib/format';
 
 interface Props {
@@ -61,6 +62,20 @@ function toNumOrNull(v: string): number | null {
 // can type partial / comma-decimal values without the input being clobbered
 // on every keystroke. On save, the entry is persisted via Dexie and the
 // user is sent back to the Records screen.
+//
+// In addition to the original hard-error validation (missing odometer,
+// missing cost values) and the legacy odometer-less-than-previous soft
+// warning, this form runs five consistency checks (defined in lib/checks)
+// against the candidate entry vs the rest of the vehicle's history:
+//   A — Avg consumption ±N% vs running average
+//   B — Unit price ±N% vs recent median
+//   D — New-interval distance > N× avg interval distance
+//   E — Entry date earlier than the latest existing entry
+//   H — Another entry within ±N min and ±N km (duplicate)
+// All thresholds are user-configurable in Settings. Warnings render as
+// inline help text near the relevant field; on save, any that fired get
+// gathered into a single confirm() dialog the user can review and
+// dismiss.
 export function AddEntryScreen({
   settings,
   vehicles,
@@ -135,23 +150,29 @@ export function AddEntryScreen({
 
 
 
+  // Load the full history for this vehicle. We need it not only to derive
+  // previousOdometer (already used by the legacy check) but also to feed
+  // runAllChecks for the new consistency warnings.
+  const vehicleHistory =
+    useLiveQuery<FuelUp[]>(
+      async () =>
+        form.vehicleId
+          ? await db.fuelups.where('vehicleId').equals(form.vehicleId).toArray()
+          : [],
+      [form.vehicleId],
+    ) ?? [];
+
   useEffect(() => {
     if (!form.vehicleId) {
       setPreviousOdometer(null);
       return;
     }
-    db.fuelups
-      .where('vehicleId')
-      .equals(form.vehicleId)
-      .toArray()
-      .then((rows) => {
-        const others = editingId ? rows.filter((r) => r.id !== editingId) : rows;
-        const prev = others
-          .filter((r) => r.date <= form.date)
-          .sort((a, b) => (a.date < b.date ? -1 : 1));
-        setPreviousOdometer(prev.length ? prev[prev.length - 1].odometer : null);
-      });
-  }, [form.vehicleId, form.date, editingId]);
+    const others = editingId ? vehicleHistory.filter((r) => r.id !== editingId) : vehicleHistory;
+    const prev = others
+      .filter((r) => r.date <= form.date)
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    setPreviousOdometer(prev.length ? prev[prev.length - 1].odometer : null);
+  }, [form.vehicleId, form.date, editingId, vehicleHistory]);
 
 
 
@@ -250,6 +271,87 @@ export function AddEntryScreen({
 
 
 
+  // Build the consistency-check input only when the form has enough
+  // information to bother. Bails out early if the cost values aren't
+  // even close to ready — no point showing scary warnings while the user
+  // is still typing the first digit of the price.
+  const warnings: Warning[] = useMemo(() => {
+    if (!form.vehicleId || !odometerOk) return [];
+    if (!costOk) return [];
+    const candidateAmount = isEv
+      ? evAmount
+      : reconciled?.amount ?? null;
+    const candidateUnitPrice = isEv
+      ? evUnitPrice
+      : reconciled?.unitPrice ?? null;
+    const candidateTotal = isEv
+      ? evTotalCost
+      : reconciled?.totalCost ?? null;
+    const ctx: CheckContext = {
+      candidate: {
+        id: editingId ?? null,
+        date: form.date,
+        odometer: Math.round(odometerNum!),
+        vehicleType,
+        partial: form.partial,
+        missed: form.missed,
+        gasLiters: isEv ? null : candidateAmount,
+        gasPricePerLiter: isEv ? null : candidateUnitPrice,
+        kWhCharged: isEv ? candidateAmount : null,
+        kWhPrice: isEv ? candidateUnitPrice : null,
+        totalCost: candidateTotal,
+        phevKwhPer100Km: isPhev ? toNumOrNull(form.phevKwhPer100Km) : null,
+        phevKwhPrice: isPhev ? toNumOrNull(form.phevKwhPrice) : null,
+      },
+      otherEntries: vehicleHistory,
+      thresholds: {
+        consumptionPercent: settings.warnConsumptionPercent,
+        pricePercent: settings.warnPricePercent,
+        distanceMultiplier: settings.warnDistanceMultiplier,
+        duplicateMinutes: settings.warnDuplicateMinutes,
+        duplicateKm: settings.warnDuplicateKm,
+      },
+    };
+    return runAllChecks(ctx);
+  }, [
+    form.vehicleId,
+    form.date,
+    form.partial,
+    form.missed,
+    form.phevKwhPer100Km,
+    form.phevKwhPrice,
+    odometerOk,
+    odometerNum,
+    costOk,
+    isEv,
+    isPhev,
+    evAmount,
+    evUnitPrice,
+    evTotalCost,
+    reconciled,
+    editingId,
+    vehicleType,
+    vehicleHistory,
+    settings.warnConsumptionPercent,
+    settings.warnPricePercent,
+    settings.warnDistanceMultiplier,
+    settings.warnDuplicateMinutes,
+    settings.warnDuplicateKm,
+  ]);
+
+  // Index warnings by field so each input can render its own inline help.
+  const warningsByField = useMemo(() => {
+    const map: Partial<Record<Warning['field'], Warning>> = {};
+    for (const w of warnings) {
+      // First warning per field wins (only one displayed inline anyway).
+      if (!map[w.field]) map[w.field] = w;
+    }
+    return map;
+  }, [warnings]);
+
+
+
+
   const save = async () => {
     if (!canSave) {
       setShowErrors(true);
@@ -258,6 +360,16 @@ export function AddEntryScreen({
     if (odometerWarn) {
       const ok = confirm(
         `Odometer ${odometerNum} is less than previous (${previousOdometer}). Save anyway?`,
+      );
+      if (!ok) return;
+    }
+    // Surface all consistency warnings in one dialog so the user can
+    // review them before committing. Never blocks the save — "Cancel" in
+    // the dialog aborts, "OK" proceeds. If nothing fired, this is a no-op.
+    if (warnings.length > 0) {
+      const lines = warnings.map((w) => '• ' + w.message).join('\n');
+      const ok = confirm(
+        `Heads up — the following looks unusual:\n\n${lines}\n\nSave anyway?`,
       );
       if (!ok) return;
     }
@@ -324,6 +436,12 @@ export function AddEntryScreen({
           value={form.date}
           onChange={(d) => setForm({ ...form, date: d })}
         />
+        {warningsByField.date && (
+          <WarningHint message={warningsByField.date.message} />
+        )}
+        {warningsByField.duplicate && (
+          <WarningHint message={warningsByField.duplicate.message} />
+        )}
 
         <OdometerField
           value={form.odometer}
@@ -332,6 +450,9 @@ export function AddEntryScreen({
           showError={errors.odometer}
           showWarning={!!odometerWarn && !errors.odometer}
         />
+        {warningsByField.odometer && (
+          <WarningHint message={warningsByField.odometer.message} />
+        )}
 
         {isEv ? (
           <EvChargingSection
@@ -350,6 +471,12 @@ export function AddEntryScreen({
             errors={errors}
             sym={sym}
           />
+        )}
+        {warningsByField.unitPrice && (
+          <WarningHint message={warningsByField.unitPrice.message} />
+        )}
+        {warningsByField.consumption && (
+          <WarningHint message={warningsByField.consumption.message} />
         )}
 
         {isPhev && (
@@ -394,6 +521,20 @@ export function AddEntryScreen({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Inline soft-warning shown under whichever field a Warning is attached
+// to. Styled like the existing odometer warning (input-help in danger
+// color) so it slots into the form aesthetic naturally.
+function WarningHint({ message }: { message: string }) {
+  return (
+    <div
+      className="input-help"
+      style={{ color: 'var(--danger)', marginTop: -8, marginLeft: 4 }}
+    >
+      ⚠ {message}
     </div>
   );
 }

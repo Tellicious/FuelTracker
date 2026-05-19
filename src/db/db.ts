@@ -7,6 +7,12 @@ import { DEFAULT_SETTINGS, type FuelUp, type Settings, type Vehicle } from './ty
 // gas columns (gasLiters/gasPricePerLiter) for ICE/HEV/PHEV fills,
 // electricity columns (kWhCharged/kWhPrice) for EV charges, and PHEV-only
 // columns (phevKwhPer100Km/phevKwhPrice) for electricity-since-last-full.
+//
+// Note on the recently-added Settings fields (recordFieldsByType and the
+// five warning thresholds): no schema bump or migration is needed. The
+// getSettings helper below merges DEFAULT_SETTINGS over the stored row
+// at read time, so any field that wasn't in v2 storage is hydrated on
+// the fly. Adding optional Settings fields isn't a breaking change.
 export class FuelTrackerDB extends Dexie {
   vehicles!: Table<Vehicle, string>;
   fuelups!: Table<FuelUp, string>;
@@ -37,6 +43,8 @@ export async function initializeSettings(): Promise<Settings> {
 
 // Read the global settings row, merging with DEFAULT_SETTINGS so any
 // recently-added fields are populated even on an old DB that predates them.
+// This is the mechanism that makes the new recordFieldsByType + warning
+// threshold fields available on a v2 database without needing a migration.
 export async function getSettings(): Promise<Settings> {
   const existing = await db.settings.get('global');
   if (!existing) return DEFAULT_SETTINGS;

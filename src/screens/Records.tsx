@@ -2,8 +2,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import { VehicleSelect } from '../components/VehicleSelect';
 import { db } from '../db/db';
-import type { FuelUp, Settings, Vehicle } from '../db/types';
-import { currencySymbol, fmtDate, fmtMoney, fmtNumber } from '../lib/format';
+import type { FuelUp, Settings, Vehicle, VehicleType } from '../db/types';
+import { fmtDate, fmtNumber } from '../lib/format';
+import { RECORD_FIELDS, sanitizeRecordFields } from '../lib/records-fields';
+import { DEFAULT_RECORD_FIELDS } from '../db/types';
+import { computeIntervals } from '../lib/stats';
 import { safeGet, safeSet } from '../lib/storage';
 
 interface Props {
@@ -37,8 +40,12 @@ function compareByDate(a: FuelUp, b: FuelUp, key: SortKey): number {
 
 // Records screen — a chronological list of every fuel-up for the active
 // vehicle, newest first by default with a sort toggle. Each row shows the
-// date, odometer, amount + unit price + total cost, plus partial/missed
-// badges. Tapping a row opens the AddEntry form pre-populated for editing.
+// date + odometer up top, plus three user-configurable fields below
+// (chosen per vehicle type in Settings → Records display). Consumption
+// fields are derived from the SAME interval computation that powers the
+// Dashboard chart, so the numbers on this row match the Dashboard dot for
+// the same date exactly. Tapping a row opens the AddEntry form
+// pre-populated for editing.
 export function RecordsScreen({
   settings,
   vehicles,
@@ -65,6 +72,27 @@ export function RecordsScreen({
     () => [...entries].sort((a, b) => compareByDate(a, b, sortKey)),
     [entries, sortKey],
   );
+
+  const activeVehicle = vehicles.find((v) => v.id === activeVehicleId);
+  const vehicleType: VehicleType = activeVehicle?.type ?? 'ice';
+
+  // Build a fast lookup from closing-entry-id → interval so we can render
+  // consumption metrics inline without re-deriving anything. Uses the
+  // exact same computeIntervals function the Dashboard does.
+  const intervalsByEntryId = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeIntervals>[number]>();
+    const intervals = computeIntervals(entries, vehicleType);
+    for (const iv of intervals) map.set(iv.endEntryId, iv);
+    return map;
+  }, [entries, vehicleType]);
+
+  // Get the three fields configured for this vehicle type, defending
+  // against stored configs that referenced now-disallowed fields (e.g.
+  // after a vehicle type change).
+  const fieldsForType = useMemo(() => {
+    const stored = settings.recordFieldsByType?.[vehicleType] ?? DEFAULT_RECORD_FIELDS[vehicleType];
+    return sanitizeRecordFields(stored, vehicleType, DEFAULT_RECORD_FIELDS[vehicleType]);
+  }, [settings.recordFieldsByType, vehicleType]);
 
   const remove = async (id: string) => {
     if (!confirm('Delete this entry?')) return;
@@ -111,14 +139,18 @@ export function RecordsScreen({
       ) : (
         <div className="list">
           {sorted.map((e) => {
-            const veh = vehicles.find((v) => v.id === e.vehicleId);
-            const isEv = veh?.type === 'ev';
-            const sym = currencySymbol(settings.currency);
-
-            const amount = isEv ? e.kWhCharged : e.gasLiters;
-            const unitPrice = isEv ? e.kWhPrice : e.gasPricePerLiter;
-            const amountUnit = isEv ? 'kWh' : 'l';
-            const priceUnit = isEv ? `${sym}/kWh` : `${sym}/l`;
+            const interval = intervalsByEntryId.get(e.id) ?? null;
+            const ctx = {
+              vehicleType,
+              currency: settings.currency,
+              consumptionUnit: settings.consumptionUnit,
+            };
+            // Compute one cell per configured field — null → "—".
+            const cells = fieldsForType.map((key) => {
+              const def = RECORD_FIELDS[key];
+              const value = def.compute(e, interval, ctx);
+              return { key, label: def.shortLabel, value };
+            });
             return (
               <div key={e.id} className="list-item">
                 <button
@@ -138,12 +170,12 @@ export function RecordsScreen({
                     </span>
                   </div>
                   <div className="list-item-sub">
-                    {amount != null && `${fmtNumber(amount, 2)} ${amountUnit}`}
-                    {e.totalCost != null && ` · ${fmtMoney(e.totalCost, settings.currency)}`}
-                    {unitPrice != null && ` · ${fmtNumber(unitPrice, 3)} ${priceUnit}`}
-                    {e.phevKwhPer100Km != null && (
-                      <> · {fmtNumber(e.phevKwhPer100Km, 1)} kWh/100km</>
-                    )}
+                    {cells.map((c, i) => (
+                      <span key={c.key} className={c.value == null ? 'muted' : ''}>
+                        {i > 0 && ' · '}
+                        {c.value ?? '—'}
+                      </span>
+                    ))}
                     {(e.partial || e.missed) && (
                       <span style={{ marginLeft: 8 }}>
                         {e.partial && <span className="badge badge-partial">Partial</span>}
