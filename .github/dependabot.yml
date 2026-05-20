@@ -1,0 +1,50 @@
+# Dependabot config for FuelTracker.
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # npm dependencies (React, Vite, Dexie, Vitest, TypeScript, etc.)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "04:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 10
+    groups:
+      # Roll all minor + patch bumps into a single PR each week to keep
+      # the PR queue manageable. Majors still come as individual PRs so
+      # they get proper review (React 19 → 20, Vite 5 → 6, etc.).
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+
+  # GitHub Actions referenced in .github/workflows/*.yml
+  # (actions/checkout, actions/setup-node, etc.)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "04:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 5
+    groups:
+      # There are only a handful of actions in the workflow, so collapse
+      # every update into one PR regardless of bump type.
+      all-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
