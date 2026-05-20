@@ -304,3 +304,30 @@ function emptyDashboard(): DashboardStats {
     intervals: [],
   };
 }
+
+// Centered moving average over a numeric series. Nulls remain null in the
+// output (so gaps in data don't get filled in), but a value's window still
+// includes any non-null neighbors that fall within ±half. The default
+// window is 5, which feels right for fuel-economy traces (smooths out the
+// jitter from individual fill-ups without erasing real trends). Used by
+// the LineChart smoothing toggle.
+export function smoothSeries(
+  values: (number | null)[],
+  window = 5,
+): (number | null)[] {
+  const half = Math.floor(window / 2);
+  return values.map((v, i) => {
+    if (v == null) return null;
+    let sum = 0;
+    let n = 0;
+    for (let j = -half; j <= half; j++) {
+      const k = i + j;
+      if (k < 0 || k >= values.length) continue;
+      const x = values[k];
+      if (x == null) continue;
+      sum += x;
+      n += 1;
+    }
+    return n > 0 ? sum / n : v;
+  });
+}
