@@ -167,7 +167,7 @@ export function DashboardScreen({
       />
       <KpiCard
         label="Total cost"
-        value={stats.totalCost > 0 ? fmtMoney(stats.totalCost, settings.currency, 2) : '—'}
+        value={stats.totalCost > 0 ? fmtMoney(stats.totalCost, settings.currency, 0) : '—'}
       />
       {/* Row 2 */}
       <KpiCard
