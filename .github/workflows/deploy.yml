@@ -22,8 +22,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+          #cache: npm
+      - run: npm install
       - run: npm test
       # BASE_URL must match your repo name (e.g. /fueltracker/) when deploying to
       # https://<user>.github.io/<repo>/. For a user/org root site, leave empty.
