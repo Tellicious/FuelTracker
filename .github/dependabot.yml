@@ -1,5 +1,4 @@
 # Dependabot config for FuelTracker.
-# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 version: 2
 updates:
   # npm dependencies (React, Vite, Dexie, Vitest, TypeScript, etc.)
@@ -19,15 +18,8 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    commit-message:
-      prefix: "chore(deps)"
-      prefix-development: "chore(dev-deps)"
-      include: "scope"
-    labels:
-      - "dependencies"
 
   # GitHub Actions referenced in .github/workflows/*.yml
-  # (actions/checkout, actions/setup-node, etc.)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -42,9 +34,3 @@ updates:
       all-actions:
         patterns:
           - "*"
-    commit-message:
-      prefix: "ci"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "github-actions"
