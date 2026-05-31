@@ -7,9 +7,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "sunday"
-      time: "04:00"
-      timezone: "Europe/Rome"
-    open-pull-requests-limit: 10
+      time: "02:00"
+      timezone: "UTC"
     groups:
       # Roll all minor + patch bumps into a single PR each week to keep
       # the PR queue manageable. Majors still come as individual PRs so
@@ -18,6 +17,8 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      assignees:
+      - "Tellicious"
 
   # GitHub Actions referenced in .github/workflows/*.yml
   - package-ecosystem: "github-actions"
@@ -25,12 +26,11 @@ updates:
     schedule:
       interval: "weekly"
       day: "sunday"
-      time: "04:00"
-      timezone: "Europe/Rome"
-    open-pull-requests-limit: 5
+      time: "02:00"
+      timezone: "UTC"
     groups:
-      # There are only a handful of actions in the workflow, so collapse
-      # every update into one PR regardless of bump type.
       all-actions:
         patterns:
           - "*"
+      assignees:
+      - "Tellicious"
