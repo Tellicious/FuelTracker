@@ -4,13 +4,13 @@ Offline-first fuel & energy tracker for ICE, HEV, PHEV and EV vehicles. Built as
 
 ## What it does
 
-- **Multi-vehicle tracking** — log fuel-ups for as many vehicles as you want,   switch between them on the Dashboard / Records screens.
+- **Multi-vehicle tracking** — log fuel-ups for as many vehicles as you want, switch between them on the Dashboard / Records screens.
 - **Per-vehicle-type forms** — ICE and HEV get the gas form (liters / €-per-l / total, with 2-of-3 auto-derivation), PHEV adds an optional electricity section, EV gets a pure charging form (kWh + €/kWh, total computed).
 - **Cost-equivalent km/l for PHEVs** — converts your real fuel + electricity spend into the equivalent number of liters you'd have bought at the current pump price, so you can compare PHEV to ICE on a fair money basis.
+- **Smoothed consumption chart** — optional moving-average smoothing with a configurable window (3 / 5 / 7 / 9 / 11) in Settings, so trends are readable without losing the raw points.
 - **iOS-aligned look** — SF system font, iOS systemGreen palette, sentence-case labels, Auto/Light/Dark theme picker. Status bar tint matches.
 - **Offline / installable** — runs without network once installed; "Add to Home Screen" on iOS Safari gives you an app icon.
-- **Manual backups** — Settings → Back up now exports two files (CSV + JSON). No automatic cloud sync.
-- **Consistency warnings on entry** — soft checks for abnormal consumption, suspicious unit prices, oversized odometer jumps, out-of-order dates, and duplicates with thresholds tunable in Settings.
+- **Manual backups** — Settings → Back up now exports two files (CSV + JSON); the Data section also offers CSV-only and JSON-only exports when you just want one. No automatic cloud sync; you decide where they go.
 
 ## Quick start
 
@@ -21,9 +21,15 @@ npm test             # vitest
 npm run build        # outputs to dist/
 ```
 
-To enable the service worker for offline-install testing, set
-`ENABLE_PWA=1 npm run build`. The default build keeps the SW off because a
-stale SW cache on iOS Safari is genuinely painful to debug.
+The service worker (offline support + installability) is **on by default**.
+If a stale SW cache on iOS Safari gets in your way while debugging, disable
+the PWA for a build with `ENABLE_PWA=0 npm run build`.
+
+Stuck behind a bad cache or a wedged service worker? Open the app with
+`?reset=1` appended to the URL. The gated bootstrap in `index.html`
+unregisters every service worker, clears all caches, then reloads cleanly
+without the query string. On every other load the SW is left alone so
+offline support keeps working.
 
 ### Deploying
 
@@ -92,7 +98,9 @@ four entries, with liters and cost summed.
 
 ## Backup format
 
-"Back up now" produces **two files** alongside each other:
+"Back up now" produces **two files** alongside each other (the Data section's
+"Export entries (CSV)" and "Export config (JSON)" buttons let you produce
+either one on its own):
 
 ### `fueltracker-entries-YYYY-MM-DD.csv` — the fuel-ups
 
@@ -128,7 +136,7 @@ case-insensitively on import.
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exportedAt": "2026-05-11T10:30:00.000Z",
   "vehicles": [
     {
@@ -146,7 +154,8 @@ case-insensitively on import.
     "defaultElectricityCost": 0.25,
     "backupCadence": "weekly",
     "themeMode": "auto",
-    "schemaVersion": 1,
+    "smoothingWindow": 5,
+    "schemaVersion": 2,
     "lastBackupAt": null,
     "lastBackupHash": null
   }
@@ -164,8 +173,10 @@ Settings → "Import file" auto-detects by extension:
   `vehicleId` first; if that fails, by `vehicle` name; if both fail, it
   auto-creates a stub vehicle of type `ice` so the entries link to something.
   You can re-classify it from the Vehicles screen afterward.
-- **`.json`** restores vehicles and settings. Backup-tracking fields are
-  preserved from the existing device.
+- **`.json`** restores vehicles and settings. It is accepted only when the
+  file's `schemaVersion` matches the running app (currently `2`); a mismatch
+  is rejected with a "schema mismatch" error so you update the app first.
+  Backup-tracking fields are preserved from the existing device.
 
 Both formats prompt for **Merge** (upsert by id) or **Replace** (wipe table
 first, then insert). Replace requires typing `DELETE` as a sanity check.
@@ -189,37 +200,37 @@ keep in mind:
 index.html             gated bootstrap: error capture + SW/cache cleanup runs
                        BEFORE the entry module is injected, so a stale service
                        worker can't intercept the fetch and serve the wrong
-                       content (which iOS Safari masks as "Script error")
+                       content (which iOS Safari masks as "Script error").
+                       Open with ?reset=1 to force-unregister SWs + clear caches
 
 src/
   App.tsx              orchestrator: settings, banner, SW update prompt,
                        ErrorBoundary around each tab
   main.tsx             bootstrap: init settings → apply theme → render under
-                       a top-level ErrorBoundary
+                       a top-level ErrorBoundary; registers the service worker
+                       (dynamic import of virtual:pwa-register) in prod builds
   db/
-    db.ts              Dexie schema, initializeSettings,
-                       getSettings
-    types.ts           FuelUp / Vehicle / Settings, VehicleType, RecordField  lib/
+    db.ts              Dexie schema (single version-2 store: vehicles /
+                       fuelups / settings), initializeSettings, getSettings, uid
+    types.ts           FuelUp / Vehicle / Settings, VehicleType, SCHEMA_VERSION
+  lib/
     derive.ts          2-of-3 reconciliation for amount/unitPrice/totalCost
     stats.ts           computeIntervals, computeDashboard, sortFuelUps
     format.ts          fmtNumber, fmtMoney, fmtDate, currencySymbol
     units.ts           consumption-unit conversions (km/l ↔ L/100km ↔ mpg)
     theme.ts           applyThemeFromSettings, watchSystemTheme
     storage.ts         safeGet/safeSet/safeRemove wrappers around localStorage
-    records-fields.ts  RECORD_FIELDS catalog + per-vehicle-type allowed sets;
-                       drives the configurable Records-row display
-    checks.ts          consistency warnings (consumption / unit price /
-                       distance / date order / duplicate) for AddEntry
+                       (iOS Safari can throw on storage access in some modes)
     backup/
-      index.ts         BackupPayload, exportBackup, importFile, payloadHash
-      csv.ts           CSV serialisation, schema-v1-legacy import shim
-      json.ts          JSON config serialisation    backup/
-      index.ts         BackupPayload, exportBackup, importFile, payloadHash
-      csv.ts           CSV serialisation, schema-v1-legacy import shim
+      index.ts         BackupPayload, exportBackup, exportEntriesCsvOnly,
+                       exportConfigJsonOnly, importFile, payloadHash
+      csv.ts           CSV serialisation + parsing (current split-column format)
       json.ts          JSON config serialisation
   components/
     LineChart.tsx      custom dual-axis SVG chart with pan/pinch/wheel zoom,
                        toggleable series, viewport-based filtering
+    DecimalInput.tsx   locale-aware decimal field with its own string state,
+                       so a comma decimal separator survives the round-trip
     TabBar.tsx         5-tab nav with the centre + pill; stroke-matched SVG
                        icons (gauge / list / + / car / gear)
     KpiCard.tsx        top-row stats
@@ -234,37 +245,29 @@ src/
                        partial/missed toggles, Cancel button
     Records.tsx        chronological list with newest/oldest sort toggle
     Vehicles.tsx       CRUD vehicles; defaultElectricityCost only for PHEV/EV
-    Settings.tsx       theme / currency / backup / import-export
+    Settings.tsx       theme / currency / consumption unit / default €/kWh /
+                       chart smoothing / backup / import-export
   styles.css           SF font stack, iOS systemGreen palette, light/dark vars
 ```
 
 ## Testing
 
 ```bash
-npm test          # 52 tests across src/lib/**/*.test.ts
+npm test          # vitest, suite under src/lib/**/*.test.ts
 ```
 
 Coverage spans 2-of-3 derivation, vehicle-type branching (HEV-as-ICE, EV,
-PHEV), interval/aggregate stats including the user-bug regressions
-(partials rolling into intervals, missed entries excluded,
-closing-entry-priced equivalent, totalTrackedKm excluding missed
-segments), the dashboard pill metrics (totalRefuels / totalCost /
-avgKmPerRefuel — including PHEV imputed-electricity addition, EV
-no-double-counting, and exclusion of dangling entries that never closed
-an interval), CSV round-trip with notes containing commas and quotes,
-JSON config round-trip including the lastBackup field scrub and the new
-optional settings fields (per-vehicle-type Records display config +
-warning thresholds), and the five AddEntry consistency checks
-(consumption ±% vs running average, unit price ±% vs recent median,
-distance vs avg interval, out-of-order date, ±time/±km duplicate
-detection) including their minimum-history skip conditions and
-multi-warning aggregation.
+PHEV), interval/aggregate stats including the user-bug regressions (partials
+rolling into intervals, missed entries excluded, closing-entry-priced
+equivalent, totalTrackedKm excluding missed segments), CSV round-trip with
+notes containing commas and quotes, and JSON config round-trip including the
+lastBackup field scrub.
 
 ## Tech
 
 - React 18 + TypeScript + Vite 5
 - Dexie 4 (IndexedDB) + dexie-react-hooks for live queries
-- vite-plugin-pwa (off by default, gated behind `ENABLE_PWA=1`)
+- vite-plugin-pwa — service worker on by default; disable for a build with `ENABLE_PWA=0`
 - vitest for tests
 - No CSS framework — hand-rolled iOS-aligned styles via CSS variables for theming
 - No charting library — the SVG line chart is ~300 lines in `LineChart.tsx`
