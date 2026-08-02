@@ -17,7 +17,7 @@ updates:
         update-types:
           - "minor"
           - "patch"
-      assignees:
+    assignees:
       - "Tellicious"
 
   # GitHub Actions referenced in .github/workflows/*.yml
@@ -32,5 +32,5 @@ updates:
       all-actions:
         patterns:
           - "*"
-      assignees:
+    assignees:
       - "Tellicious"
