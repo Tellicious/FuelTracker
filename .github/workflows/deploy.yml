@@ -21,9 +21,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
-          #cache: npm
-      - run: npm install
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - run: npm test
       # BASE_URL must match your repo name (e.g. /fueltracker/) when deploying to
       # https://<user>.github.io/<repo>/. For a user/org root site, leave empty.
