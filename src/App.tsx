@@ -96,13 +96,20 @@ export function App() {
 
 
 
+  // Live snapshot of everything a backup covers. useLiveQuery re-runs
+  // buildPayload whenever vehicles, fuel-ups or settings change — including
+  // edits that leave every row count unchanged — so the hash below stays
+  // current. (Previously the hash was only recomputed when a count or the
+  // settings row changed, so editing an entry after a backup never made
+  // the backup look stale.)
+  const backupSnapshot = useLiveQuery(() => buildPayload(), []);
+
   useEffect(() => {
-    if (!settings) return;
+    if (!backupSnapshot) return;
     let cancelled = false;
     (async () => {
       try {
-        const p = await buildPayload();
-        const h = await payloadHash(p);
+        const h = await payloadHash(backupSnapshot);
         if (!cancelled) setBannerHash(h);
       } catch (err) {
 
@@ -112,7 +119,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [settings, vehicleCount, entryCount]);
+  }, [backupSnapshot]);
 
   const showBackupBanner = useMemo(() => {
     if (!settings || bannerDismissed || !bannerHash) return false;
