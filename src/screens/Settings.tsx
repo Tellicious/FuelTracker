@@ -456,7 +456,7 @@ export function SettingsScreen({ onToast }: Props) {
 
       <Modal
         open={!!pendingImport}
-        title="Import file"
+        title={pendingImport && pendingImport.length > 1 ? 'Import files' : 'Import file'}
         onClose={() => setPendingImport(null)}
       >
         {pendingImport && (
