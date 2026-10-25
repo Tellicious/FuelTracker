@@ -309,6 +309,7 @@ export function AddEntryScreen({
         phevKwhPrice: isPhev ? toNumOrNull(form.phevKwhPrice) : null,
       },
       otherEntries: vehicleHistory,
+      consumptionUnit: settings.consumptionUnit,
       thresholds: {
         consumptionPercent: settings.warnConsumptionPercent,
         pricePercent: settings.warnPricePercent,
@@ -337,6 +338,7 @@ export function AddEntryScreen({
     editingId,
     vehicleType,
     vehicleHistory,
+    settings.consumptionUnit,
     settings.warnConsumptionPercent,
     settings.warnPricePercent,
     settings.warnDistanceMultiplier,

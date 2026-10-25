@@ -347,7 +347,7 @@ export function SettingsScreen({ onToast }: Props) {
             onChange={(n) => update({ warnConsumptionPercent: Math.max(0, n ?? 0) })}
           />
           <div className="input-help">
-            Warn when the new interval's avg consumption differs from the running average by more than this percentage.
+            Warn when the new interval's avg consumption differs from the running average by more than this percentage (measured in your consumption unit).
           </div>
         </div>
         <div className="field" style={{ marginTop: 16 }}>

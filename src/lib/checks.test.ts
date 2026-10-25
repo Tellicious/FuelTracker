@@ -59,11 +59,42 @@ function mkCtx(
       phevKwhPrice: candidate.phevKwhPrice ?? null,
     },
     otherEntries,
+    consumptionUnit: 'km/l',
     thresholds,
   };
 }
 
 describe('checkConsumption (A)', () => {
+  it('compares and reports in l/100 km when that is the display unit', () => {
+    // Same data as the next test: 9 km/l vs a 18.18 km/l average, i.e.
+    // 11.1 vs 5.5 l/100 km — about 102% above, which is worse.
+    const history = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54 }),
+      mkEntry({ date: '2026-01-10', odometer: 10100, gasLiters: 10, gasPricePerLiter: 1.8, totalCost: 18 }),
+      mkEntry({ date: '2026-02-10', odometer: 11000, gasLiters: 45, gasPricePerLiter: 1.8, totalCost: 81 }),
+    ];
+    const ctx: CheckContext = {
+      ...mkCtx(
+        {
+          vehicleType: 'ice',
+          date: '2026-03-01T00:00:00Z',
+          odometer: 11450,
+          gasLiters: 50,
+          gasPricePerLiter: 1.8,
+          totalCost: 90,
+        },
+        history,
+      ),
+      consumptionUnit: 'l/100km',
+    };
+    const w = checkConsumption(ctx);
+    expect(w).not.toBeNull();
+    expect(w!.message).toContain('(11.1 l/100 km)');
+    expect(w!.message).toContain('(5.5 l/100 km)');
+    expect(w!.message).toContain('above');
+    expect(w!.message).toContain('worse');
+  });
+
   it('compares against the distance-weighted average shown on the Dashboard', () => {
     // Other intervals: 100 km / 10 l (10 km/l) and 900 km / 45 l (20 km/l).
     // Mean of per-interval values = 15; distance-weighted = 1000 / 55 = 18.18.
@@ -87,7 +118,7 @@ describe('checkConsumption (A)', () => {
     );
     const w = checkConsumption(ctx);
     expect(w).not.toBeNull();
-    expect(w!.message).toContain('(18.2)');
+    expect(w!.message).toContain('(18.2 km/l)');
   });
 
   it('fires when km/l is more than 50% below the running average (ICE)', () => {

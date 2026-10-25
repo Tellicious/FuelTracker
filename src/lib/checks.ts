@@ -1,5 +1,6 @@
-import type { FuelUp, VehicleType } from '../db/types';
+import type { ConsumptionUnit, FuelUp, VehicleType } from '../db/types';
 import { averageConsumption, computeIntervals, sortFuelUps } from './stats';
+import { displayUnitLabel, toDisplay } from './units';
 
 // One soft warning surfaced to the user. None of these block save — the
 // user can review them in a confirm() dialog and proceed if they meant it.
@@ -40,6 +41,9 @@ export interface CheckContext {
   // internally for the interval-based checks (A, D) so the same code path
   // computes what the new full-to-full interval looks like.
   otherEntries: FuelUp[];
+  // The user's display unit for fuel consumption. The consumption warning
+  // compares and reports in this unit, so its numbers match the Dashboard.
+  consumptionUnit: ConsumptionUnit;
   thresholds: {
     consumptionPercent: number;
     pricePercent: number;
@@ -92,6 +96,10 @@ function candidateAsFuelUp(c: CheckContext['candidate']): FuelUp {
 //   ICE / HEV / PHEV-without-electricity → kmPerL
 //   EV                                    → kWhPer100Km (inverted comparison: higher = worse)
 //   PHEV with electricity                 → equivalentKmPerL
+// Fuel metrics are converted to the user's display unit (km/l or
+// l/100 km) before comparing, so the values, the percentage and the
+// tolerance in Settings all refer to the numbers the user sees. In
+// l/100 km lower is better, like kWh/100 km.
 //
 // Skipped silently when there's not enough prior history to compare against
 // (need at least 2 other valid intervals so the average isn't a single
@@ -114,27 +122,34 @@ export function checkConsumption(ctx: CheckContext): Warning | null {
   let label: string;
   let candVal: number;
   let avgVal: number;
-  // "higher is better" is true for km/l metrics, false for kWh/100km.
-  let higherIsBetter = true;
+  let unitLabel: string;
+  // "higher is better" is true for km/l, false for l/100 km and kWh/100 km.
+  let higherIsBetter: boolean;
 
   const avg = averageConsumption(others);
+  const fuelUnit = ctx.consumptionUnit;
 
   if (c.vehicleType === 'ev') {
     if (cand.kWhPer100Km <= 0 || avg.avgKWhPer100Km == null) return null;
     label = 'electricity consumption';
     candVal = cand.kWhPer100Km;
     avgVal = avg.avgKWhPer100Km;
+    unitLabel = 'kWh/100 km';
     higherIsBetter = false;
   } else if (c.vehicleType === 'phev' && cand.equivalentKmPerL > 0 && cand.electricityCost > 0) {
     if (avg.avgEquivalentKmPerL == null) return null;
     label = 'equivalent fuel consumption';
-    candVal = cand.equivalentKmPerL;
-    avgVal = avg.avgEquivalentKmPerL;
+    candVal = toDisplay(cand.equivalentKmPerL, fuelUnit);
+    avgVal = toDisplay(avg.avgEquivalentKmPerL, fuelUnit);
+    unitLabel = displayUnitLabel(fuelUnit);
+    higherIsBetter = fuelUnit === 'km/l';
   } else {
     if (cand.kmPerL <= 0 || avg.avgKmPerL == null) return null;
     label = 'fuel consumption';
-    candVal = cand.kmPerL;
-    avgVal = avg.avgKmPerL;
+    candVal = toDisplay(cand.kmPerL, fuelUnit);
+    avgVal = toDisplay(avg.avgKmPerL, fuelUnit);
+    unitLabel = displayUnitLabel(fuelUnit);
+    higherIsBetter = fuelUnit === 'km/l';
   }
 
   if (!(avgVal > 0)) return null;
@@ -146,9 +161,9 @@ export function checkConsumption(ctx: CheckContext): Warning | null {
     : higherIsBetter ? 'worse' : 'better';
   return {
     field: 'consumption',
-    message: `Calculated ${label} (${round1(candVal)}) is ${pct(deltaPct)} ${
+    message: `Calculated ${label} (${round1(candVal)} ${unitLabel}) is ${pct(deltaPct)} ${
       deltaPct > 0 ? 'above' : 'below'
-    } the average (${round1(avgVal)}) — ${dir} than usual.`,
+    } the average (${round1(avgVal)} ${unitLabel}) — ${dir} than usual.`,
   };
 }
 
