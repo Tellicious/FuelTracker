@@ -306,8 +306,9 @@ describe('large dataset', () => {
 });
 
 describe('computeDashboard — totalRefuels / totalCost / avgKmPerRefuel', () => {
-  it('counts all entries that participated in valid intervals, coherent with tracked km', () => {
-    // 4 entries all full → 3 valid intervals → all 4 entries participate.
+  it('counts the fill-ups whose fuel was used in tracked km (anchor excluded)', () => {
+    // 4 entries all full → 3 valid intervals → 3 fill-ups (the first one
+    // only anchors the chain; its fuel covered untracked distance).
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
       mkEntry({ date: '2026-01-15', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
@@ -315,15 +316,15 @@ describe('computeDashboard — totalRefuels / totalCost / avgKmPerRefuel', () =>
       mkEntry({ date: '2026-02-15', odometer: 11500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
     ];
     const d = computeDashboard(entries, 'ice');
-    expect(d.totalRefuels).toBe(4);
-    expect(d.totalCost).toBeCloseTo(55.5 * 4, 2);
-    expect(d.avgKmPerRefuel).toBeCloseTo(1500 / 4, 2);
+    expect(d.totalRefuels).toBe(3);
+    expect(d.totalCost).toBeCloseTo(55.5 * 3, 2);
+    expect(d.avgKmPerRefuel).toBeCloseTo(1500 / 3, 2);
   });
 
   it('excludes entries inside a skipped (missed) interval from the count', () => {
     // 4 entries, one missed. Intervals: (0→1) valid, (1→2) skipped (entry 2 missed),
-    // (2→3) valid (entry 2 becomes anchor of next interval). So entries 0,1,2,3
-    // all participate in valid intervals (entry 2 as anchor of the second one).
+    // (2→3) valid (entry 2 becomes anchor of next interval). Counted fill-ups are
+    // the closers of the valid intervals: entries 1 and 3.
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
       mkEntry({ date: '2026-01-30', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
@@ -339,14 +340,14 @@ describe('computeDashboard — totalRefuels / totalCost / avgKmPerRefuel', () =>
     ];
     const d = computeDashboard(entries, 'ice');
     expect(d.intervals.length).toBe(2);
-    expect(d.totalRefuels).toBe(4);
-    expect(d.totalCost).toBeCloseTo(55.5 + 55.5 + 60.8 + 47.5, 2);
-    expect(d.avgKmPerRefuel).toBeCloseTo(d.totalTrackedKm / 4, 2);
+    expect(d.totalRefuels).toBe(2);
+    expect(d.totalCost).toBeCloseTo(55.5 + 47.5, 2);
+    expect(d.avgKmPerRefuel).toBeCloseTo(d.totalTrackedKm / 2, 2);
   });
 
   it('drops dangling entries that never closed an interval', () => {
     // 3 entries, last is a partial that hasn't closed → 1 valid interval,
-    // 2 entries participated. Third entry dangles.
+    // 1 counted fill-up (its closer). Third entry dangles.
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
       mkEntry({ date: '2026-01-15', odometer: 10500, gasLiters: 30, gasPricePerLiter: 1.85, totalCost: 55.5 }),
@@ -354,9 +355,9 @@ describe('computeDashboard — totalRefuels / totalCost / avgKmPerRefuel', () =>
     ];
     const d = computeDashboard(entries, 'ice');
     expect(d.intervals.length).toBe(1);
-    expect(d.totalRefuels).toBe(2);
-    expect(d.totalCost).toBeCloseTo(55.5 + 55.5, 2);
-    expect(d.avgKmPerRefuel).toBeCloseTo(500 / 2, 2);
+    expect(d.totalRefuels).toBe(1);
+    expect(d.totalCost).toBeCloseTo(55.5, 2);
+    expect(d.avgKmPerRefuel).toBeCloseTo(500, 2);
   });
 
   it('PHEV: totalCost adds imputed electricity to gas-cost receipts', () => {
@@ -373,9 +374,9 @@ describe('computeDashboard — totalRefuels / totalCost / avgKmPerRefuel', () =>
       }),
     ];
     const d = computeDashboard(entries, 'phev');
-    // Gas: 55.5 × 2 = 111. Imputed electricity: (10/100) × 1000 × 0.25 = 25.
-    expect(d.totalCost).toBeCloseTo(111 + 25, 2);
-    expect(d.totalRefuels).toBe(2);
+    // Gas: 55.5 (closing fill). Imputed electricity: (10/100) × 1000 × 0.25 = 25.
+    expect(d.totalCost).toBeCloseTo(55.5 + 25, 2);
+    expect(d.totalRefuels).toBe(1);
   });
 
   it('EV: totalCost does not double-count electricity', () => {
@@ -389,8 +390,21 @@ describe('computeDashboard — totalRefuels / totalCost / avgKmPerRefuel', () =>
       mkEntry({ date: '2026-02-01', odometer: 11000, kWhCharged: 50, kWhPrice: 0.30, totalCost: 15 }),
     ];
     const d = computeDashboard(entries, 'ev');
-    expect(d.totalCost).toBeCloseTo(15 + 18 + 15, 2);
-    expect(d.totalRefuels).toBe(3);
+    expect(d.totalCost).toBeCloseTo(18 + 15, 2);
+    expect(d.totalRefuels).toBe(2);
+  });
+
+  it('counts partial fill-ups inside an interval, and keeps Total cost ÷ km = Avg €/km', () => {
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54 }),
+      mkEntry({ date: '2026-01-10', odometer: 10200, gasLiters: 15, gasPricePerLiter: 1.85, totalCost: 27.75, partial: true }),
+      mkEntry({ date: '2026-01-25', odometer: 10600, gasLiters: 20, gasPricePerLiter: 1.85, totalCost: 37 }),
+    ];
+    const d = computeDashboard(entries, 'ice');
+    expect(d.totalRefuels).toBe(2);
+    expect(d.totalCost).toBeCloseTo(27.75 + 37, 2);
+    expect(d.avgKmPerRefuel).toBeCloseTo(600 / 2, 2);
+    expect(d.totalCost / d.totalTrackedKm).toBeCloseTo(d.avgEurPerKm!, 10);
   });
 
   it('returns 0 / null when no valid intervals exist (single entry)', () => {

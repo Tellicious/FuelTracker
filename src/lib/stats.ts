@@ -16,9 +16,9 @@ export interface Interval {
   equivalentKmPerL: number;
   eurPerKm: number;
   endEntryId: string;
-  // IDs of every entry that contributed to this interval (anchor + every
-  // entry from anchor+1 to closer, inclusive). Used by computeDashboard
-  // to count how many fill-ups participated in the valid intervals.
+  // IDs of every entry in this interval: the anchor first, then every
+  // entry from anchor+1 to the closer, inclusive. computeDashboard counts
+  // entryIds.slice(1) — the fill-ups whose fuel was used in this interval.
   entryIds: string[];
 }
 
@@ -27,14 +27,16 @@ export interface DashboardStats {
   avgEurPerKm: number | null;
   lastEurPerKm: number | null;
 
-  // Count of distinct entries that participated in any valid interval.
-  // Kept coherent with totalTrackedKm — only entries inside non-skipped
-  // intervals count. The "Fill-ups" / "Charges" pill on the Dashboard.
+  // Count of fill-ups whose fuel/energy was used within tracked distance:
+  // for every valid interval, the entries after its anchor up to and
+  // including its closer. Anchors are excluded (their fuel covered
+  // distance before tracking started), so N back-to-back full fill-ups
+  // give N-1 intervals and N-1 fill-ups. The "Fill-ups" / "Charges" pill.
   totalRefuels: number;
 
-  // Sum of gas + electricity spend across the same set of entries used
-  // for totalTrackedKm, plus the PHEV-imputed electricity cost from
-  // valid intervals (PHEV electricity isn't a separate entry).
+  // Spend over the tracked distance: Σ interval.totalCost (gas receipts
+  // plus electricity — EV receipts, or PHEV-imputed electricity). Same
+  // basis as avgEurPerKm, so totalCost / totalTrackedKm === avgEurPerKm.
   totalCost: number;
 
   // totalTrackedKm / totalRefuels, or null when totalRefuels === 0.
@@ -170,32 +172,21 @@ export function computeDashboard(
   const totalCostTracked = intervals.reduce((s, iv) => s + iv.totalCost, 0);
   const avgEurPerKm = totalTrackedKm > 0 ? totalCostTracked / totalTrackedKm : null;
 
-  // Count of distinct entries that participated in any valid interval.
-  // Anchors are shared between consecutive intervals — the Set collapses
-  // those naturally so each fill-up is counted once.
+  // Fill-ups whose fuel was used within the tracked distance: every entry
+  // after an interval's anchor, up to and including its closer. The
+  // anchor is excluded — its fuel covered distance before the interval
+  // started. (Counting anchors made "Avg km / fill-up" read 300 for two
+  // fills 600 km apart, and added the anchor's receipt to Total cost.)
   const usedEntryIds = new Set<string>();
   for (const iv of intervals) {
-    for (const id of iv.entryIds) usedEntryIds.add(id);
+    for (const id of iv.entryIds.slice(1)) usedEntryIds.add(id);
   }
   const totalRefuels = usedEntryIds.size;
 
-  // Sum the receipt costs of the entries that participated in valid
-  // intervals (this naturally includes the very first anchor's cost,
-  // which doesn't appear in any interval.totalCost). For PHEV, add the
-  // imputed electricity cost on top — that's not stored on any entry, it
-  // comes from interval.electricityCost. For ICE/HEV electricity is
-  // always 0; for EV the entries already store electricity as totalCost,
-  // so adding interval.electricityCost would double-count.
-  const usedEntries = entries.filter((e) => usedEntryIds.has(e.id));
-  const sumOfEntryCosts = usedEntries.reduce(
-    (s, e) => s + (e.totalCost ?? 0),
-    0,
-  );
-  const phevImputedElectricity =
-    vehicleType === 'phev'
-      ? intervals.reduce((s, iv) => s + iv.electricityCost, 0)
-      : 0;
-  const totalCost = sumOfEntryCosts + phevImputedElectricity;
+  // Same costs as avgEurPerKm, so Total cost ÷ Tracked km = Avg €/km.
+  // interval.totalCost already holds gas receipts plus electricity (EV
+  // receipts, or the PHEV imputed amount), so nothing is double-counted.
+  const totalCost = totalCostTracked;
 
   const avgKmPerRefuel = totalRefuels > 0 ? totalTrackedKm / totalRefuels : null;
 
