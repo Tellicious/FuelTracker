@@ -371,6 +371,49 @@ describe('checkDateOrder (E)', () => {
     );
     expect(checkDateOrder(ctx)).toBeNull();
   });
+
+  it('stays silent when an older entry is edited without changing its date', () => {
+    // Regression: editing any entry but the newest used to warn on save,
+    // because the date was compared against the newest entry overall.
+    const history = [
+      mkEntry({ id: 'a', date: '2026-01-01T00:00:00Z', odometer: 10000 }),
+      mkEntry({ id: 'b', date: '2026-02-01T00:00:00Z', odometer: 10600 }),
+      mkEntry({ id: 'c', date: '2026-03-01T00:00:00Z', odometer: 11200 }),
+    ];
+    const ctx = mkCtx(
+      { id: 'b', vehicleType: 'ice', date: '2026-02-01T00:00:00Z', odometer: 10600 },
+      history,
+    );
+    expect(checkDateOrder(ctx)).toBeNull();
+  });
+
+  it('stays silent when an older entry is back-filled in its correct place', () => {
+    const history = [
+      mkEntry({ date: '2026-01-01T00:00:00Z', odometer: 10000 }),
+      mkEntry({ date: '2026-03-01T00:00:00Z', odometer: 11200 }),
+    ];
+    const ctx = mkCtx(
+      { vehicleType: 'ice', date: '2026-02-01T00:00:00Z', odometer: 10600 },
+      history,
+    );
+    expect(checkDateOrder(ctx)).toBeNull();
+  });
+
+  it('fires when an edit moves the date before an entry with a lower odometer', () => {
+    const history = [
+      mkEntry({ id: 'a', date: '2026-01-01T00:00:00Z', odometer: 10000 }),
+      mkEntry({ id: 'b', date: '2026-02-01T00:00:00Z', odometer: 10600 }),
+      mkEntry({ id: 'c', date: '2026-03-01T00:00:00Z', odometer: 11200 }),
+    ];
+    const ctx = mkCtx(
+      // Entry c re-dated to mid-January by mistake.
+      { id: 'c', vehicleType: 'ice', date: '2026-01-15T00:00:00Z', odometer: 11200 },
+      history,
+    );
+    const w = checkDateOrder(ctx);
+    expect(w).not.toBeNull();
+    expect(w!.message).toContain('lower odometer (10');
+  });
 });
 
 describe('checkDuplicate (H)', () => {

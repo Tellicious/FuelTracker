@@ -231,21 +231,32 @@ export function checkDistance(ctx: CheckContext): Warning | null {
   };
 }
 
-// (E) Date order: warn if the new entry's date is BEFORE the most recent
-// existing entry for this vehicle. This catches the mistake of forgetting
-// to update the date when re-using a previous template, or accidentally
-// typing the wrong month.
+// (E) Date order vs odometer order: the odometer only goes up, so no
+// other entry with a LOWER odometer may be dated AFTER the candidate.
+// Catches a mistyped date (wrong month, forgot to change it) on a new
+// entry or an edit, while staying silent when an older entry is edited or
+// back-filled in its correct place. Comparing against the newest entry
+// overall, as before, fired on every edit of an entry that wasn't the
+// newest.
+// The opposite case (an entry with a HIGHER odometer dated before the
+// candidate) means the candidate's odometer is below the previous entry's,
+// which the form already asks about ("Odometer … is less than previous").
 export function checkDateOrder(ctx: CheckContext): Warning | null {
   const c = ctx.candidate;
-  const others = ctx.otherEntries.filter((e) => e.id !== c.id);
-  if (others.length === 0) return null;
-  const latest = others.reduce((max, e) => (e.date > max.date ? e : max), others[0]);
-  if (c.date >= latest.date) return null;
+  // Of the entries with a lower odometer, the latest-dated one is the
+  // clearest example to quote.
+  let conflict: FuelUp | null = null;
+  for (const e of ctx.otherEntries) {
+    if (e.id === c.id) continue;
+    if (e.odometer >= c.odometer || e.date <= c.date) continue;
+    if (!conflict || e.date > conflict.date) conflict = e;
+  }
+  if (!conflict) return null;
   return {
     field: 'date',
-    message: `Entry date is earlier than the most recent existing entry (${new Date(
-      latest.date,
-    ).toLocaleDateString()}) — check the date.`,
+    message: `Entry date is earlier than the ${new Date(
+      conflict.date,
+    ).toLocaleDateString()} entry, which has a lower odometer (${conflict.odometer.toLocaleString()} km) — check the date.`,
   };
 }
 
