@@ -110,8 +110,6 @@ export function AddEntryScreen({
     if (!editingEntry) return;
     const editVehicle = vehicles.find((v) => v.id === editingEntry.vehicleId);
     const editIsEv = editVehicle?.type === 'ev';
-    const elecDefault =
-      editVehicle?.defaultElectricityCost ?? settings.defaultElectricityCost;
     setForm({
       vehicleId: editingEntry.vehicleId,
       date: editingEntry.date,
@@ -126,13 +124,16 @@ export function AddEntryScreen({
       partial: editingEntry.partial,
       missed: editingEntry.missed ?? false,
       phevKwhPer100Km: editingEntry.phevKwhPer100Km?.toString() ?? '',
-      phevKwhPrice:
-        editingEntry.phevKwhPrice?.toString() ?? String(elecDefault),
+      // The stored value, even when empty: pre-filling the default here
+      // would save it with the edit. Since readings on partial fill-ups
+      // count, that would change the stats of an entry the user only
+      // opened. New entries still get the default (effect below).
+      phevKwhPrice: editingEntry.phevKwhPrice?.toString() ?? '',
       notes: editingEntry.notes ?? '',
     });
     setLastTouched([]);
     setSuppressDerivation(false);
-  }, [editingEntry, vehicles, settings.defaultElectricityCost]);
+  }, [editingEntry, vehicles]);
 
 
 
