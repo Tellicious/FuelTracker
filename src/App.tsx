@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { BackupBanner } from './components/BackupBanner';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -94,9 +94,13 @@ export function App() {
   const entryCount = useLiveQuery(() => db.fuelups.count(), []) ?? 0;
 
 
+  // One timer for the current toast: a new toast restarts it, so the
+  // previous toast's timer can't clear the new one early.
+  const toastTimer = useRef<number | undefined>(undefined);
   const pushToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2400);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2400);
   };
 
 
