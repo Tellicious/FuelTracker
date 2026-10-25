@@ -41,44 +41,48 @@ function fmtField(v: string | number | boolean | null | undefined): string {
   return csvEscape(String(v));
 }
 
-// Split a CSV line into its cells. Handles quoted cells, doubled-quote
-// escapes inside quoted cells, and treats unquoted commas as separators.
-// Does NOT handle embedded newlines within a quoted cell (we accept that
-// limitation — our exports never embed newlines in any field).
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '';
+// Parse a whole CSV document into rows of cells, RFC 4180-style: quoted
+// cells may contain commas, doubled quotes ("") and line breaks; rows end
+// at an unquoted \n, \r\n or \r. Parsing the whole text (instead of
+// splitting on newlines first) is what lets multi-line notes round-trip.
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
   let inQuotes = false;
-  let i = 0;
-  while (i < line.length) {
-    const c = line[i];
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
     if (inQuotes) {
       if (c === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i += 2;
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i++;
         } else {
           inQuotes = false;
-          i++;
         }
       } else {
-        cur += c;
-        i++;
+        cell += c;
       }
-    } else if (c === ',') {
-      out.push(cur);
-      cur = '';
-      i++;
-    } else if (c === '"' && cur === '') {
+    } else if (c === '"' && cell === '') {
       inQuotes = true;
-      i++;
+    } else if (c === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
     } else {
-      cur += c;
-      i++;
+      cell += c;
     }
   }
-  out.push(cur);
-  return out;
+  if (cell !== '' || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
 }
 
 // Parse a numeric cell, accepting both "." and "," as the decimal point
@@ -123,7 +127,7 @@ export function fuelupsToCsv(fuelups: FuelUp[], vehicles: Vehicle[]): string {
       f.missed,
       f.phevKwhPer100Km,
       f.phevKwhPrice,
-      typeof f.notes === 'string' ? f.notes.replace(/[\r\n]+/g, ' ') : f.notes,
+      f.notes,
       f.id,
     ];
     lines.push(cells.map(fmtField).join(','));
@@ -167,10 +171,11 @@ function inferPlaceholderType(p: Placeholder): Vehicle['type'] {
 // current split-column format (gasLiters/gasPricePerLiter, kWhCharged/
 // kWhPrice, phevKwhPer100Km/phevKwhPrice).
 export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (lines.length < 1) throw new Error('CSV is empty.');
+  // Drop blank lines (a row that is a single whitespace-only cell).
+  const rows = parseCsv(text).filter((r) => !(r.length === 1 && r[0].trim() === ''));
+  if (rows.length < 1) throw new Error('CSV is empty.');
 
-  const header = parseCsvLine(lines[0]).map((h) => h.trim());
+  const header = rows[0].map((h) => h.trim());
   if (!header.includes('odometer') || (!header.includes('vehicleId') && !header.includes('vehicle'))) {
     throw new Error(
       "CSV doesn't look like a FuelTracker export (missing odometer or vehicle columns).",
@@ -232,8 +237,8 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
   };
 
   const out: FuelUp[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = parseCsvLine(lines[i]);
+  for (let i = 1; i < rows.length; i++) {
+    const cells = rows[i];
     const get = (j: number): string => (j >= 0 && j < cells.length ? cells[j] : '');
 
     const rawVehicleId = get(idx.vehicleId).trim();

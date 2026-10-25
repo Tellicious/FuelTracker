@@ -87,6 +87,30 @@ describe('CSV round-trip', () => {
     expect(fuelups[0].notes).toBe('He said "fill it", and I did. (true story)');
   });
 
+  it('preserves line breaks in notes', () => {
+    // Regression: notes were flattened to one line on export because the
+    // importer split the file on newlines before parsing quoted cells.
+    const notes = 'Line one\nLine two, with comma\r\nLine "three"';
+    const entries = [
+      mkEntry({ date: '2024-01-01T00:00:00.000Z', odometer: 10000, gasLiters: 30, notes }),
+      mkEntry({ date: '2024-02-01T00:00:00.000Z', odometer: 10500, gasLiters: 31 }),
+    ];
+    const csv = fuelupsToCsv(entries, [vehicle]);
+    const { fuelups } = csvToFuelups(csv, [vehicle]);
+    expect(fuelups).toHaveLength(2);
+    expect(fuelups[0].notes).toBe(notes);
+    expect(fuelups[1].odometer).toBe(10500);
+  });
+
+  it('accepts CRLF line endings', () => {
+    const csv =
+      'date,vehicle,vehicleId,odometer,gasLiters\r\n' +
+      '2024-01-01T00:00:00.000Z,,v1,1000,30\r\n' +
+      '2024-02-01T00:00:00.000Z,,v1,1500,31\r\n';
+    const { fuelups } = csvToFuelups(csv, [vehicle]);
+    expect(fuelups.map((f) => f.odometer)).toEqual([1000, 1500]);
+  });
+
   it('flags unknown vehicle names when the matching vehicle is missing', () => {
     const entries = [
       mkEntry({

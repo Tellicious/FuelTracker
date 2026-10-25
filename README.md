@@ -125,7 +125,7 @@ date,vehicle,vehicleId,odometer,gasLiters,gasPricePerLiter,kWhCharged,kWhPrice,t
 | `missed`           | `true` / `false` | a fuel-up between the previous entry and this one wasn't logged — interval is excluded from stats                                                                                                            |
 | `phevKwhPer100Km`  | decimal or empty | PHEV-only: average kWh/100 km observed over the interval ending at this entry, read from the trip computer at the previous full fuel-up. Set only on full fuel-ups; values on partials are ignored by stats. |
 | `phevKwhPrice`     | decimal or empty | PHEV-only: €/kWh paid for that electricity                                                                                                                                                                   |
-| `notes`            | string           | newlines flattened to spaces on export to keep one row per fuel-up                                                                                                                                           |
+| `notes`            | string           | line breaks are kept (inside a quoted cell)                                                                                                                                                                  |
 | `id`               | string           | uid; empty cells get a fresh id on import (so you can add rows in Excel)                                                                                                                                     |
 
 CSV quirks: standard RFC-style quoting. Commas/quotes/newlines in `notes` are
