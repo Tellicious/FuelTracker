@@ -45,6 +45,24 @@ export function VehiclesScreen({ settings }: Props) {
   const save = async () => {
     if (!editing) return;
     if (!editing.name.trim()) return;
+    // Stats read litres for ICE/HEV/PHEV and kWh for EVs, so moving a
+    // vehicle across the EV boundary makes all of its existing entries
+    // drop out of the stats. The entries themselves are untouched, so
+    // switching back restores everything — but say so before doing it.
+    const original = isNew ? undefined : vehicles.find((v) => v.id === editing.id);
+    if (original && (original.type === 'ev') !== (editing.type === 'ev')) {
+      const count = await db.fuelups.where('vehicleId').equals(editing.id).count();
+      if (count > 0) {
+        const logged = original.type === 'ev' ? 'charges (kWh)' : 'fuel-ups (litres)';
+        const newLabel = VEHICLE_TYPES.find((t) => t.value === editing.type)?.label ?? editing.type;
+        const ok = confirm(
+          `"${editing.name}" has ${count} ${count === 1 ? 'entry' : 'entries'} logged as ${logged}. ` +
+            `As ${newLabel} they won't count in the Dashboard or Records stats. ` +
+            `The entries are kept, and switching back restores the stats. Change type anyway?`,
+        );
+        if (!ok) return;
+      }
+    }
     await db.vehicles.put(editing);
     setEditing(null);
   };
