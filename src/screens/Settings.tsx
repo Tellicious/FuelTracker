@@ -17,7 +17,7 @@ import {
   exportBackup,
   exportConfigJsonOnly,
   exportEntriesCsvOnly,
-  importFile,
+  importFiles,
   payloadHash,
 } from '../lib/backup';
 import { currencySymbol, fmtDate } from '../lib/format';
@@ -66,7 +66,8 @@ export function SettingsScreen({ onToast }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [fieldsTab, setFieldsTab] = useState<'iceHybrid' | 'phev' | 'ev'>('iceHybrid');
-  const [pendingImport, setPendingImport] = useState<File | null>(null);
+  // Files picked for import, waiting for the Merge / Replace choice.
+  const [pendingImport, setPendingImport] = useState<File[] | null>(null);
 
   if (!settings) return <div className="screen">Loading…</div>;
 
@@ -124,39 +125,38 @@ export function SettingsScreen({ onToast }: Props) {
     }
   };
 
-  // Picking a file opens a Merge / Replace / Cancel sheet instead of the
-  // old confirm(), where Cancel meant the destructive REPLACE.
+  // Picking files opens a Merge / Replace / Cancel sheet. Several files can
+  // be picked at once — typically the entries CSV and config JSON of one
+  // backup — and are imported together (see importFiles).
   const onImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // Reset so picking the same file again still fires onChange.
+    const files = Array.from(e.target.files ?? []);
+    // Reset so picking the same file(s) again still fires onChange.
     if (fileRef.current) fileRef.current.value = '';
-    if (file) setPendingImport(file);
+    if (files.length > 0) setPendingImport(files);
   };
 
   const runImport = async (mode: 'merge' | 'replace') => {
-    const file = pendingImport;
+    const files = pendingImport;
     setPendingImport(null);
-    if (!file) return;
+    if (!files) return;
     if (mode === 'replace') {
-      const confirmText = prompt(`Type DELETE to confirm replacing ${describeReplace(file.name)}`);
+      const what = describeReplace(files.map((f) => f.name));
+      const confirmText = prompt(`Type DELETE to confirm replacing ${what}`);
       if (confirmText !== 'DELETE') {
         onToast('Replace cancelled');
         return;
       }
     }
     try {
-      const result = await importFile(file, mode);
-      if (result.kind === 'json') {
-        const removedMsg = result.fuelupsRemoved
-          ? `, ${result.fuelupsRemoved} orphaned entries removed`
-          : '';
-        onToast(`Imported config (${result.vehiclesImported} vehicles${removedMsg}, ${mode})`);
-      } else {
-        const stubMsg = result.createdStubVehicles.length
-          ? ` (+ ${result.createdStubVehicles.length} new vehicles)`
-          : '';
-        onToast(`Imported ${result.fuelupsImported} entries${stubMsg} (${mode})`);
+      const result = await importFiles(files, mode);
+      const parts: string[] = [];
+      if (result.configFiles > 0) parts.push(`${result.vehiclesImported} vehicles + settings`);
+      if (result.csvFiles > 0) parts.push(`${result.fuelupsImported} entries`);
+      if (result.createdStubVehicles.length > 0) {
+        parts.push(`${result.createdStubVehicles.length} placeholder vehicles`);
       }
+      if (result.fuelupsRemoved > 0) parts.push(`${result.fuelupsRemoved} orphaned entries removed`);
+      onToast(`Imported ${parts.join(', ')} (${mode})`);
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : 'Import failed';
@@ -423,7 +423,8 @@ export function SettingsScreen({ onToast }: Props) {
           <div className="input-help">
             "Back up now" exports two files: the entries CSV (your fuel-ups, openable in Excel)
             and a config JSON (vehicles + app settings). On iOS the share sheet shows both —
-            pick <strong>Save to Files → iCloud Drive</strong>.
+            pick <strong>Save to Files → iCloud Drive</strong>. To restore, select both in
+            <strong> Import files</strong>.
           </div>
         </div>
       </div>
@@ -441,20 +442,22 @@ export function SettingsScreen({ onToast }: Props) {
           onClick={() => fileRef.current?.click()}
           disabled={busy}
         >
-          Import file
+          Import files
         </button>
         <input
           ref={fileRef}
           type="file"
+          multiple
           accept=".csv,.json,text/csv,application/json"
           style={{ display: 'none' }}
           onChange={onImportFile}
         />
         <div className="input-help">
-          Drop in a <code>.csv</code> (entries) or <code>.json</code> (vehicles + settings).
-          You'll be asked to merge or replace. Vehicles in the CSV that don't match an
-          existing vehicle get a placeholder (type guessed from the data); importing the
-          config JSON afterwards fills in the real vehicle details.
+          Pick a <code>.csv</code> (entries), a <code>.json</code> (vehicles + settings), or
+          both files of a backup together to restore everything in one step. All files are
+          checked first and nothing is written if any of them is invalid. You'll be asked to
+          merge or replace. Vehicles in a CSV that don't match any vehicle get a placeholder
+          (type guessed from the data); importing the config JSON fills in the real details.
         </div>
       </div>
 
@@ -470,11 +473,14 @@ export function SettingsScreen({ onToast }: Props) {
         {pendingImport && (
           <div className="stack">
             <div className="mono" style={{ wordBreak: 'break-all' }}>
-              {pendingImport.name}
+              {pendingImport.map((f, i) => (
+                <div key={`${i}-${f.name}`}>{f.name}</div>
+              ))}
             </div>
             <div className="input-help">
               <strong>Merge</strong> keeps your existing data and adds or updates what's in the
-              file. <strong>Replace</strong> replaces {describeReplace(pendingImport.name)}.
+              {pendingImport.length > 1 ? ' files' : ' file'}. <strong>Replace</strong> replaces{' '}
+              {describeReplace(pendingImport.map((f) => f.name))}.
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button className="btn btn-danger" onClick={() => runImport('replace')}>

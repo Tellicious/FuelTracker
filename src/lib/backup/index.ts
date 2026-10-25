@@ -1,7 +1,7 @@
 import { db, getSettings } from '../../db/db';
 import { SCHEMA_VERSION, type FuelUp, type Settings, type Vehicle } from '../../db/types';
 import { csvToFuelups, fuelupsToCsv } from './csv';
-import { configToJson, jsonToConfig } from './json';
+import { configToJson, jsonToConfig, type ConfigJson } from './json';
 
 export type { ConfigJson } from './json';
 export type { CsvParseResult } from './csv';
@@ -162,118 +162,188 @@ export async function exportConfigJsonOnly(payload: BackupPayload): Promise<bool
 }
 
 export interface ImportResult {
-  kind: 'csv' | 'json';
-  fuelupsImported: number;
+  configFiles: number;
+  csvFiles: number;
+  // Vehicles from config JSON files (CSV placeholders are listed separately).
   vehiclesImported: number;
   settingsImported: boolean;
+  fuelupsImported: number;
+  // Names of placeholder vehicles created for CSV rows with no known vehicle.
   createdStubVehicles: string[];
   // Entries deleted because a replace removed their vehicle.
   fuelupsRemoved: number;
 }
 
-// Entry point for restoring from a user-selected file. Sniffs the format
-// (.json with a schemaVersion → config; otherwise CSV entries) and routes
-// to the matching importer. `mode` controls whether existing data is kept
-// ('merge') or replaced ('replace'). Replace swaps out exactly what the
-// file carries and never leaves orphans behind:
-//   CSV  → all entries are replaced; vehicles and settings are kept.
-//   JSON → all vehicles and settings are replaced; entries whose vehicle
-//          is not in the file are deleted (they'd otherwise be orphans
-//          that no screen shows but backups and the data hash still carry).
+export interface ImportSource {
+  name: string;
+  text: string;
+}
+
+// Everything an import will write, worked out before anything is written.
+export interface ImportPlan {
+  clearVehicles: boolean;
+  clearFuelups: boolean;
+  // When set, existing entries whose vehicle isn't in this set are
+  // deleted (a JSON replace with no CSV in the same import).
+  keepFuelupsOfVehicles: Set<string> | null;
+  vehicles: Vehicle[];
+  settings: Settings | null;
+  fuelups: FuelUp[];
+  summary: Omit<ImportResult, 'fuelupsRemoved'>;
+}
+
+// A file is a config JSON if it has a .json extension, or if its content
+// looks like one (a JSON object carrying a schemaVersion); anything else
+// is treated as an entries CSV.
+function isConfigJson(source: ImportSource): boolean {
+  const ext = source.name.toLowerCase().split('.').pop();
+  const text = source.text.trim();
+  return ext === 'json' || (text.startsWith('{') && text.includes('"schemaVersion"'));
+}
+
+// Work out what importing these files will do, without touching the DB.
+// Throws (naming the file) on the first invalid file, so a bad file means
+// nothing is written. Config JSON files are applied before entries CSVs
+// whatever order they were picked in, and CSV rows are resolved against
+// the vehicles that will exist after the JSON step, so picking both
+// backup files together restores everything in one go with no
+// placeholders.
+//
+// `mode` controls whether existing data is kept ('merge') or replaced
+// ('replace'). Replace swaps out exactly what the files carry and never
+// leaves orphans behind:
+//   CSV only    → all entries are replaced; vehicles and settings are kept.
+//   JSON only   → all vehicles and settings are replaced; entries whose
+//                 vehicle is not in the file are deleted (they'd otherwise
+//                 be orphans that no screen shows but backups still carry).
+//   JSON + CSV  → vehicles, settings and entries are all replaced.
 // See describeReplace() for the user-facing wording.
-export async function importFile(
-  file: File,
+export function planImport(
+  sources: ImportSource[],
+  dbVehicles: Vehicle[],
   mode: 'merge' | 'replace',
-): Promise<ImportResult> {
-  const text = await file.text();
-  const ext = file.name.toLowerCase().split('.').pop();
-  const looksJson = ext === 'json' || (text.trim().startsWith('{') && text.includes('"schemaVersion"'));
-
-  if (looksJson) {
-    return importConfigJson(text, mode);
+): ImportPlan {
+  const configs: ConfigJson[] = [];
+  const csvs: ImportSource[] = [];
+  for (const source of sources) {
+    if (!isConfigJson(source)) {
+      csvs.push(source);
+      continue;
+    }
+    const cfg = withFileName(source.name, () => jsonToConfig(source.text));
+    // A config from a different schema version is refused: the user needs
+    // to update the app first.
+    if (cfg.schemaVersion !== SCHEMA_VERSION) {
+      throw new Error(
+        `${source.name}: schema mismatch (file v${cfg.schemaVersion}, app v${SCHEMA_VERSION}).`,
+      );
+    }
+    configs.push(cfg);
   }
-  return importEntriesCsv(text, mode);
-}
 
-// User-facing description of what a replace import deletes, keyed off
-// the file name (the same extension check importFile uses first).
-export function describeReplace(fileName: string): string {
-  return fileName.toLowerCase().endsWith('.json')
-    ? 'all vehicles and settings (entries of vehicles not in the file are deleted)'
-    : 'all entries (vehicles and settings are kept)';
-}
+  const replace = mode === 'replace';
+  const replacesVehicles = replace && configs.length > 0;
+  const configVehicles = configs.flatMap((c) => c.vehicles);
 
-// Restore vehicles + settings from a config JSON export. Refuses to load
-// when the file's schemaVersion doesn't match the running app — the user
-// would need to update the app first. Preserves the existing backup
-// metadata (lastBackupAt/Hash) since those are device-specific.
-async function importConfigJson(
-  text: string,
-  mode: 'merge' | 'replace',
-): Promise<ImportResult> {
-  const cfg = jsonToConfig(text);
-  if (cfg.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error(
-      `Schema mismatch (file v${cfg.schemaVersion}, app v${SCHEMA_VERSION}).`,
+  // Vehicles that will exist once the config step has run. When a JSON
+  // replace clears the vehicles table, the current DB vehicles won't
+  // survive, so CSV rows must not be matched to them.
+  const afterConfig = new Map<string, Vehicle>();
+  if (!replacesVehicles) for (const v of dbVehicles) afterConfig.set(v.id, v);
+  for (const v of configVehicles) afterConfig.set(v.id, v);
+
+  const fuelups: FuelUp[] = [];
+  const placeholders: Vehicle[] = [];
+  for (const source of csvs) {
+    // Earlier files' placeholders are passed in too, so two CSVs naming
+    // the same unknown vehicle share one placeholder.
+    const parsed = withFileName(source.name, () =>
+      csvToFuelups(source.text, [...afterConfig.values(), ...placeholders]),
     );
+    fuelups.push(...parsed.fuelups);
+    placeholders.push(...parsed.newVehicles);
   }
+
+  return {
+    clearVehicles: replacesVehicles,
+    clearFuelups: replace && csvs.length > 0,
+    keepFuelupsOfVehicles:
+      replacesVehicles && csvs.length === 0
+        ? new Set(configVehicles.map((v) => v.id))
+        : null,
+    vehicles: [...configVehicles, ...placeholders],
+    settings: configs.length > 0 ? configs[configs.length - 1].settings : null,
+    fuelups,
+    summary: {
+      configFiles: configs.length,
+      csvFiles: csvs.length,
+      vehiclesImported: configVehicles.length,
+      settingsImported: configs.length > 0,
+      fuelupsImported: fuelups.length,
+      createdStubVehicles: placeholders.map((v) => v.name),
+    },
+  };
+}
+
+// Prefix a parse error with the file it came from, so "Row 5: invalid
+// date" says which of the picked files is wrong.
+function withFileName<T>(fileName: string, fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`${fileName}: ${msg}`);
+  }
+}
+
+// Entry point for restoring from one or more user-selected files (e.g. the
+// entries CSV and config JSON of one backup, picked together). Every file
+// is read and validated first (planImport), then everything is written in
+// a single transaction, so either all files are imported or none is.
+// Existing backup metadata (lastBackupAt/Hash) is kept: it's per-device.
+export async function importFiles(
+  files: File[],
+  mode: 'merge' | 'replace',
+): Promise<ImportResult> {
+  const sources = await Promise.all(
+    files.map(async (f) => ({ name: f.name, text: await f.text() })),
+  );
+  const plan = planImport(sources, await db.vehicles.toArray(), mode);
+
   let fuelupsRemoved = 0;
   await db.transaction('rw', db.vehicles, db.fuelups, db.settings, async () => {
-    if (mode === 'replace') {
-      await db.vehicles.clear();
-      const keep = new Set(cfg.vehicles.map((v) => v.id));
-      fuelupsRemoved = await db.fuelups
-        .filter((f) => !keep.has(f.vehicleId))
-        .delete();
+    if (plan.clearVehicles) await db.vehicles.clear();
+    if (plan.clearFuelups) {
+      await db.fuelups.clear();
+    } else if (plan.keepFuelupsOfVehicles) {
+      const keep = plan.keepFuelupsOfVehicles;
+      fuelupsRemoved = await db.fuelups.filter((f) => !keep.has(f.vehicleId)).delete();
     }
-    if (cfg.vehicles.length) await db.vehicles.bulkPut(cfg.vehicles);
-    if (cfg.settings) {
+    if (plan.vehicles.length) await db.vehicles.bulkPut(plan.vehicles);
+    if (plan.settings) {
       const existing = await getSettings();
-
       await db.settings.put({
-        ...cfg.settings,
+        ...plan.settings,
         id: 'global',
         lastBackupAt: existing.lastBackupAt,
         lastBackupHash: existing.lastBackupHash,
       });
     }
+    if (plan.fuelups.length) await db.fuelups.bulkPut(plan.fuelups);
   });
-  return {
-    kind: 'json',
-    fuelupsImported: 0,
-    vehiclesImported: cfg.vehicles.length,
-    settingsImported: true,
-    createdStubVehicles: [],
-    fuelupsRemoved,
-  };
+
+  return { ...plan.summary, fuelupsRemoved };
 }
 
-// Restore fuel-up rows from an entries CSV export. Rows whose vehicle
-// can't be matched (by id, then by name) get a placeholder vehicle from
-// csvToFuelups that keeps the CSV's vehicleId, so restoring the config
-// JSON afterwards overwrites it instead of creating a duplicate. Returns
-// counts plus the names of any placeholders so the UI can call them out.
-async function importEntriesCsv(
-  text: string,
-  mode: 'merge' | 'replace',
-): Promise<ImportResult> {
-  const existingVehicles = await db.vehicles.toArray();
-  const { fuelups, newVehicles } = csvToFuelups(text, existingVehicles);
-
-  await db.transaction('rw', db.vehicles, db.fuelups, async () => {
-    if (mode === 'replace') {
-      await db.fuelups.clear();
-    }
-    if (newVehicles.length) await db.vehicles.bulkPut(newVehicles);
-    if (fuelups.length) await db.fuelups.bulkPut(fuelups);
-  });
-
-  return {
-    kind: 'csv',
-    fuelupsImported: fuelups.length,
-    vehiclesImported: newVehicles.length,
-    settingsImported: false,
-    createdStubVehicles: newVehicles.map((v) => v.name),
-    fuelupsRemoved: 0,
-  };
+// User-facing description of what a replace import replaces, keyed off
+// the picked files' names (the same extension check isConfigJson uses
+// first).
+export function describeReplace(fileNames: string[]): string {
+  const isJson = (n: string) => n.toLowerCase().endsWith('.json');
+  const hasJson = fileNames.some(isJson);
+  const hasCsv = fileNames.some((n) => !isJson(n));
+  if (hasJson && hasCsv) return 'all vehicles, settings and entries';
+  return hasJson
+    ? 'all vehicles and settings (entries of vehicles not in the file are deleted)'
+    : 'all entries (vehicles and settings are kept)';
 }

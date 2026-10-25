@@ -174,7 +174,12 @@ per-device bookkeeping and shouldn't follow the data to another machine.
 
 ### Import behavior
 
-Settings → "Import file" auto-detects by extension:
+Settings → "Import files" accepts one file or several at once — to restore a
+backup in one step, select both of its files together. JSON files are always
+applied before CSVs, whatever order they were picked in, so CSV rows attach to
+the JSON's vehicles. Every file is validated first and everything is written
+in a single transaction: if any file is invalid, the error names it and
+nothing is imported. Each file is detected by extension:
 
 - **`.csv`** restores fuel-ups. The importer matches each row to a vehicle by
   `vehicleId` first; if that fails, by `vehicle` name; if both fail, it
@@ -189,13 +194,14 @@ Settings → "Import file" auto-detects by extension:
   is rejected with a "schema mismatch" error so you update the app first.
   Backup-tracking fields are preserved from the existing device.
 
-Both formats prompt for **Merge** (upsert by id) or **Replace**. Replace
-swaps out exactly what the file carries and never leaves orphans:
+Imports prompt for **Merge** (upsert by id) or **Replace**. Replace swaps
+out exactly what the picked files carry and never leaves orphans:
 
-- `.csv` replace deletes all entries first; vehicles and settings are kept.
-- `.json` replace deletes all vehicles and replaces the settings; entries
-  whose vehicle isn't in the file are deleted too (they would otherwise be
+- `.csv` only: all entries are replaced; vehicles and settings are kept.
+- `.json` only: all vehicles and the settings are replaced; entries whose
+  vehicle isn't in the file are deleted too (they would otherwise be
   invisible orphans).
+- both: vehicles, settings and entries are all replaced.
 
 Replace requires typing `DELETE` as a sanity check.
 
