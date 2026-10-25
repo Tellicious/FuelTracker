@@ -240,8 +240,12 @@ export function AddEntryScreen({
 
   const evAmount = toNumOrNull(form.amount);
   const evUnitPrice = toNumOrNull(form.unitPrice);
+  // Rounded to cents like the gas path (lib/derive), so the stored value
+  // is 9.66 rather than 33.3 × 0.29 = 9.656999999999998.
   const evTotalCost =
-    evAmount != null && evUnitPrice != null ? evAmount * evUnitPrice : null;
+    evAmount != null && evUnitPrice != null
+      ? Math.round(evAmount * evUnitPrice * 100) / 100
+      : null;
 
 
 
