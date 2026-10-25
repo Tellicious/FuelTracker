@@ -97,7 +97,11 @@ export function toInputDateTime(iso: string): string {
 
 // Convert the local-time string returned by <input type="datetime-local">
 // back to a tz-aware ISO timestamp for storage. The input value is treated
-// as local time; new Date() interprets it that way.
-export function fromInputDateTime(local: string): string {
-  return new Date(local).toISOString();
+// as local time; new Date() interprets it that way. Returns null for an
+// empty or unparseable value (e.g. the user tapped "Clear" in the iOS
+// picker) — new Date('').toISOString() would throw a RangeError.
+export function fromInputDateTime(local: string): string | null {
+  if (!local) return null;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }

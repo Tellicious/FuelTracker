@@ -579,7 +579,12 @@ function DateTimePicker({
       <input
         type="datetime-local"
         value={toInputDateTime(value)}
-        onChange={(e) => onChange(fromInputDateTime(e.target.value))}
+        onChange={(e) => {
+          // Ignore a cleared/invalid value: React then restores the
+          // controlled input to the last valid date.
+          const iso = fromInputDateTime(e.target.value);
+          if (iso) onChange(iso);
+        }}
       />
     </div>
   );
