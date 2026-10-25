@@ -135,8 +135,30 @@ export function fuelupsToCsv(fuelups: FuelUp[], vehicles: Vehicle[]): string {
 
 export interface CsvParseResult {
   fuelups: FuelUp[];
+  /**
+   * Placeholder vehicles for rows whose vehicle isn't in the DB. Each one
+   * keeps the CSV's vehicleId when the row has one, so importing the
+   * config JSON later overwrites the placeholder instead of duplicating
+   * the vehicle. Type is inferred from the rows (see inferPlaceholderType).
+   */
+  newVehicles: Vehicle[];
   /** Vehicle names referenced by the CSV that we couldn't resolve. */
   unknownVehicleNames: string[];
+}
+
+interface Placeholder {
+  vehicle: Vehicle;
+  sawGas: boolean;
+  sawKwh: boolean;
+  sawPhev: boolean;
+}
+
+// PHEV-only columns → phev; charging data without any fuel → ev;
+// everything else → ice (ICE and HEV are indistinguishable from the rows).
+function inferPlaceholderType(p: Placeholder): Vehicle['type'] {
+  if (p.sawPhev) return 'phev';
+  if (p.sawKwh && !p.sawGas) return 'ev';
+  return 'ice';
 }
 
 // Parse a CSV string into fuel-up rows + a list of unknown vehicle names
@@ -180,6 +202,35 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
   const byName = new Map(vehicles.map((v) => [v.name.toLowerCase(), v]));
   const unknownNames = new Set<string>();
 
+  // Placeholders are looked up by the row's vehicleId when it has one,
+  // otherwise by name, so every row of the same unknown vehicle lands on
+  // the same placeholder.
+  const placeholders: Placeholder[] = [];
+  const placeholdersById = new Map<string, Placeholder>();
+  const placeholdersByName = new Map<string, Placeholder>();
+  const placeholderFor = (id: string, name: string): Placeholder => {
+    const nameKey = name.toLowerCase();
+    const found = id ? placeholdersById.get(id) : placeholdersByName.get(nameKey);
+    if (found) return found;
+    const vehicleId = id || uid();
+    const p: Placeholder = {
+      vehicle: {
+        id: vehicleId,
+        name: name || `Imported vehicle (${vehicleId.slice(0, 8)})`,
+        type: 'ice',
+        defaultElectricityCost: null,
+        createdAt: new Date().toISOString(),
+      },
+      sawGas: false,
+      sawKwh: false,
+      sawPhev: false,
+    };
+    placeholders.push(p);
+    if (id) placeholdersById.set(id, p);
+    if (name && !placeholdersByName.has(nameKey)) placeholdersByName.set(nameKey, p);
+    return p;
+  };
+
   const out: FuelUp[] = [];
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i]);
@@ -190,16 +241,15 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
 
 
     let resolvedVehicleId: string;
+    let placeholder: Placeholder | null = null;
     if (rawVehicleId && byId.has(rawVehicleId)) {
       resolvedVehicleId = rawVehicleId;
     } else if (rawVehicleName && byName.has(rawVehicleName.toLowerCase())) {
       resolvedVehicleId = byName.get(rawVehicleName.toLowerCase())!.id;
-    } else if (rawVehicleId) {
-      resolvedVehicleId = rawVehicleId;
+    } else if (rawVehicleId || rawVehicleName) {
+      placeholder = placeholderFor(rawVehicleId, rawVehicleName);
+      resolvedVehicleId = placeholder.vehicle.id;
       if (rawVehicleName) unknownNames.add(rawVehicleName);
-    } else if (rawVehicleName) {
-      resolvedVehicleId = '';
-      unknownNames.add(rawVehicleName);
     } else {
       throw new Error(`Row ${i + 1}: missing both vehicleId and vehicle name.`);
     }
@@ -216,6 +266,12 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
     const kWhPrice = parseNumOrNull(get(idx.kWhPrice));
     const phevKwhPer100Km = parseNumOrNull(get(idx.phevKwhPer100Km));
     const phevKwhPrice = parseNumOrNull(get(idx.phevKwhPrice));
+
+    if (placeholder) {
+      if (gasLiters != null) placeholder.sawGas = true;
+      if (kWhCharged != null) placeholder.sawKwh = true;
+      if (phevKwhPer100Km != null) placeholder.sawPhev = true;
+    }
 
     const notesRaw = get(idx.notes);
     out.push({
@@ -236,5 +292,11 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
     });
   }
 
-  return { fuelups: out, unknownVehicleNames: [...unknownNames] };
+  for (const p of placeholders) p.vehicle.type = inferPlaceholderType(p);
+
+  return {
+    fuelups: out,
+    newVehicles: placeholders.map((p) => p.vehicle),
+    unknownVehicleNames: [...unknownNames],
+  };
 }

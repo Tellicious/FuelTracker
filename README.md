@@ -171,8 +171,12 @@ Settings → "Import file" auto-detects by extension:
 
 - **`.csv`** restores fuel-ups. The importer matches each row to a vehicle by
   `vehicleId` first; if that fails, by `vehicle` name; if both fail, it
-  auto-creates a stub vehicle of type `ice` so the entries link to something.
-  You can re-classify it from the Vehicles screen afterward.
+  creates a placeholder vehicle so the entries link to something. The
+  placeholder keeps the row's `vehicleId` (so importing the config JSON
+  afterwards overwrites it with the real vehicle, whichever order you
+  restore in) and its type is guessed from the rows: PHEV columns → `phev`,
+  kWh only → `ev`, otherwise `ice`. You can re-classify it from the
+  Vehicles screen afterward.
 - **`.json`** restores vehicles and settings. It is accepted only when the
   file's `schemaVersion` matches the running app (currently `2`); a mismatch
   is rejected with a "schema mismatch" error so you update the app first.

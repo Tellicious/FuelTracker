@@ -1,4 +1,4 @@
-import { db, ensureSettings, getSettings, uid } from '../../db/db';
+import { db, ensureSettings, getSettings } from '../../db/db';
 import { SCHEMA_VERSION, type FuelUp, type Settings, type Vehicle } from '../../db/types';
 import { csvToFuelups, fuelupsToCsv } from './csv';
 import { configToJson, jsonToConfig } from './json';
@@ -226,102 +226,31 @@ async function importConfigJson(
   };
 }
 
-// Restore fuel-up rows from an entries CSV export. Vehicle references
-// that don't match an existing vehicle id but match by name are pointed
-// at stub vehicles auto-created from the CSV; vehicles that match
-// nothing get a created-from-CSV stub of type 'ice'. Returns counts plus
-// the names of any stub vehicles created so the UI can call them out.
+// Restore fuel-up rows from an entries CSV export. Rows whose vehicle
+// can't be matched (by id, then by name) get a placeholder vehicle from
+// csvToFuelups that keeps the CSV's vehicleId, so restoring the config
+// JSON afterwards overwrites it instead of creating a duplicate. Returns
+// counts plus the names of any placeholders so the UI can call them out.
 async function importEntriesCsv(
   text: string,
   mode: 'merge' | 'replace',
 ): Promise<ImportResult> {
   const existingVehicles = await db.vehicles.toArray();
-  const { fuelups, unknownVehicleNames } = csvToFuelups(text, existingVehicles);
-
-
-
-
-  const stubsByName = new Map<string, Vehicle>();
-  for (const name of unknownVehicleNames) {
-    stubsByName.set(name.toLowerCase(), {
-      id: uid(),
-      name,
-      type: 'ice',
-      defaultElectricityCost: null,
-      createdAt: new Date().toISOString(),
-    });
-  }
-
-  if (stubsByName.size) {
-    const existingIds = new Set(existingVehicles.map((v) => v.id));
-    const headerCells = parseHeaderCells(text);
-    const idxVehicleName = headerCells.indexOf('vehicle');
-    const idxVehicleId = headerCells.indexOf('vehicleId');
-    const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
-    for (let i = 1; i < lines.length && i - 1 < fuelups.length; i++) {
-      const cells = splitCsvLine(lines[i]);
-      const givenId = (cells[idxVehicleId] ?? '').trim();
-      const name = (cells[idxVehicleName] ?? '').trim();
-      if ((!givenId || !existingIds.has(givenId)) && name) {
-        const stub = stubsByName.get(name.toLowerCase());
-        if (stub) fuelups[i - 1].vehicleId = stub.id;
-      }
-    }
-  }
+  const { fuelups, newVehicles } = csvToFuelups(text, existingVehicles);
 
   await db.transaction('rw', db.vehicles, db.fuelups, async () => {
     if (mode === 'replace') {
       await db.fuelups.clear();
     }
-    if (stubsByName.size) await db.vehicles.bulkPut([...stubsByName.values()]);
+    if (newVehicles.length) await db.vehicles.bulkPut(newVehicles);
     if (fuelups.length) await db.fuelups.bulkPut(fuelups);
   });
 
   return {
     kind: 'csv',
     fuelupsImported: fuelups.length,
-    vehiclesImported: stubsByName.size,
+    vehiclesImported: newVehicles.length,
     settingsImported: false,
-    createdStubVehicles: [...stubsByName.keys()].map(
-      (k) => stubsByName.get(k)!.name,
-    ),
+    createdStubVehicles: newVehicles.map((v) => v.name),
   };
-}
-
-// Extract the column-name list from the CSV header row. Used to figure
-// out which columns hold vehicle name vs vehicle id during import.
-function parseHeaderCells(text: string): string[] {
-  const firstLine = text.split(/\r?\n/)[0] ?? '';
-  return splitCsvLine(firstLine).map((c) => c.trim());
-}
-
-// Split one CSV line into its cells, RFC 4180–style: respects quoted
-// cells, recognises "" as an escaped quote inside a quoted cell, and
-// treats unquoted commas as separators.
-function splitCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (inQuotes) {
-      if (c === '"' && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else if (c === '"') {
-        inQuotes = false;
-      } else {
-        cur += c;
-      }
-    } else if (c === ',') {
-      out.push(cur);
-      cur = '';
-    } else if (c === '"' && cur === '') {
-      inQuotes = true;
-    } else {
-      cur += c;
-    }
-  }
-  out.push(cur);
-  return out;
 }

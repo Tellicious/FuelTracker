@@ -445,8 +445,9 @@ export function SettingsScreen({ onToast }: Props) {
         />
         <div className="input-help">
           Drop in a <code>.csv</code> (entries) or <code>.json</code> (vehicles + settings).
-          You'll be asked to merge or replace. Vehicle names in the CSV that don't match an
-          existing vehicle will auto-create stub entries.
+          You'll be asked to merge or replace. Vehicles in the CSV that don't match an
+          existing vehicle get a placeholder (type guessed from the data); importing the
+          config JSON afterwards fills in the real vehicle details.
         </div>
       </div>
 

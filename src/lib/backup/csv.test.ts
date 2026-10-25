@@ -119,6 +119,60 @@ describe('CSV round-trip', () => {
     expect(fuelups[0].gasLiters).toBeNull();
   });
 
+  it('creates placeholders that keep the CSV vehicleId (restore order independent)', () => {
+    // Regression: placeholders used to get a fresh uid, so importing the
+    // config JSON after the CSV added the real vehicle next to the
+    // placeholder, with every entry still attached to the placeholder.
+    const entries = [
+      mkEntry({ date: '2024-01-01T00:00:00.000Z', odometer: 10000, gasLiters: 30 }),
+      mkEntry({ date: '2024-02-01T00:00:00.000Z', odometer: 10500, gasLiters: 31 }),
+    ];
+    const csv = fuelupsToCsv(entries, [vehicle]);
+    const { fuelups, newVehicles } = csvToFuelups(csv, []);
+    expect(newVehicles).toHaveLength(1);
+    expect(newVehicles[0].id).toBe('v1');
+    expect(newVehicles[0].name).toBe('Audi A3 TFSIe');
+    expect(fuelups.every((f) => f.vehicleId === 'v1')).toBe(true);
+  });
+
+  it('infers the placeholder type from the rows', () => {
+    const ev = csvToFuelups(
+      fuelupsToCsv(
+        [mkEntry({ vehicleId: 'v-ev', odometer: 1, kWhCharged: 40, kWhPrice: 0.3 })],
+        [evVehicle],
+      ),
+      [],
+    );
+    expect(ev.newVehicles[0].type).toBe('ev');
+
+    const phev = csvToFuelups(
+      fuelupsToCsv(
+        [mkEntry({ odometer: 1, gasLiters: 30, phevKwhPer100Km: 12 })],
+        [vehicle],
+      ),
+      [],
+    );
+    expect(phev.newVehicles[0].type).toBe('phev');
+
+    const ice = csvToFuelups(
+      fuelupsToCsv([mkEntry({ odometer: 1, gasLiters: 30 })], [vehicle]),
+      [],
+    );
+    expect(ice.newVehicles[0].type).toBe('ice');
+  });
+
+  it('creates a placeholder for an unknown vehicleId with no name', () => {
+    // Previously such rows were imported pointing at a vehicle that
+    // didn't exist, so they never showed up anywhere.
+    const csv =
+      'date,vehicle,vehicleId,odometer,gasLiters\n' +
+      '2024-01-01T00:00:00.000Z,,ghost-id,1000,30\n';
+    const { fuelups, newVehicles } = csvToFuelups(csv, []);
+    expect(newVehicles).toHaveLength(1);
+    expect(newVehicles[0].id).toBe('ghost-id');
+    expect(fuelups[0].vehicleId).toBe('ghost-id');
+  });
+
   it('rejects clearly non-FuelTracker CSVs', () => {
     expect(() => csvToFuelups('totally,not,a,backup\n1,2,3,4\n', [])).toThrow();
   });
