@@ -309,9 +309,10 @@
     <div id="root"></div>
     <!-- Vite needs this tag to identify the build entry. In production, the
          emit-entry-url plugin removes this tag and injects window.__FT_ENTRY__
-         at the start of <head>, so the cleanup script can gate-load it after
-         service-worker cleanup. In dev, this tag loads naturally and the
-         cleanup script bails out (no __FT_ENTRY__ defined). -->
+         at the start of <head>, so the bootstrap script in <head> loads the
+         module itself (and skips it on ?reset=1, which wipes service workers
+         and caches instead). In dev, this tag loads naturally and the
+         bootstrap script doesn't inject it (no __FT_ENTRY__ defined). -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

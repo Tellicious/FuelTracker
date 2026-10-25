@@ -6,39 +6,11 @@ import { initializeSettings } from './db/db';
 import { applyThemeFromSettings, watchSystemTheme } from './lib/theme';
 import './styles.css';
 
-// Render an uncaught-error message into the #ft-error placeholder in
-// index.html (which is hidden by default). Used by the global error
-// handlers below as a last-resort visible failure mode when the React
-// tree itself can't mount — without this, an early crash would leave the
-// user staring at a blank white screen.
-function paintError(prefix: string, err: unknown) {
-  const el = document.getElementById('ft-error');
-  if (!el) return;
-  const e = err as { message?: string; stack?: string } | null;
-  const msg = (e && (e.message ?? String(e))) || 'unknown';
-  const stack = (e && e.stack) || '';
-  el.style.display = 'block';
-  el.textContent =
-    prefix +
-    '\n\n' +
-    msg +
-    '\npage url: ' +
-    location.href +
-    '\nUA: ' +
-    navigator.userAgent +
-    (stack ? '\n\n' + stack : '');
-
-
-  console.error(prefix, err);
-}
-
-window.addEventListener('error', (e) => {
-  if (e.error) paintError('Uncaught error (module-scope)', e.error);
-});
-window.addEventListener('unhandledrejection', (e) => {
-  paintError('Unhandled rejection (module-scope)', e.reason);
-});
-
+// Uncaught errors and unhandled rejections are reported by the inline
+// script in index.html, which paints them in the #ft-diag card together
+// with its diagnostic log (in dev and prod alike). bootstrap() therefore
+// just throws: a rejected bootstrap promise reaches that card through its
+// unhandledrejection handler.
 async function bootstrap() {
   try {
     const settings = await initializeSettings();
@@ -52,26 +24,18 @@ async function bootstrap() {
   }
 
   const rootEl = document.getElementById('root');
-  if (!rootEl) {
-    paintError('Bootstrap failed', new Error('#root element not found'));
-    return;
-  }
+  if (!rootEl) throw new Error('Bootstrap failed: #root element not found');
 
-  try {
-    createRoot(rootEl).render(
-      <StrictMode>
-        <ErrorBoundary label="App">
-          <App />
-        </ErrorBoundary>
-      </StrictMode>,
-    );
-  } catch (err) {
-    paintError('Render failed', err);
-    throw err;
-  }
+  createRoot(rootEl).render(
+    <StrictMode>
+      <ErrorBoundary label="App">
+        <App />
+      </ErrorBoundary>
+    </StrictMode>,
+  );
 }
 
-bootstrap().catch((err) => paintError('Bootstrap failed', err));
+void bootstrap();
 
 // Service-worker registration lives in App (useRegisterSW) so there is a
 // single registration that also drives the "new version" banner.

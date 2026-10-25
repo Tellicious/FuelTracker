@@ -1,4 +1,4 @@
-import { db, ensureSettings, getSettings } from '../../db/db';
+import { db, getSettings } from '../../db/db';
 import { SCHEMA_VERSION, type FuelUp, type Settings, type Vehicle } from '../../db/types';
 import { csvToFuelups, fuelupsToCsv } from './csv';
 import { configToJson, jsonToConfig } from './json';
@@ -228,7 +228,7 @@ async function importConfigJson(
     }
     if (cfg.vehicles.length) await db.vehicles.bulkPut(cfg.vehicles);
     if (cfg.settings) {
-      const existing = await ensureSettings();
+      const existing = await getSettings();
 
       await db.settings.put({
         ...cfg.settings,

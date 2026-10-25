@@ -28,8 +28,9 @@ export default defineConfig({
         name: 'FuelTracker',
         short_name: 'FuelTracker',
         description: 'Offline-first fuel and electricity logbook for multiple vehicles.',
-        theme_color: '#0f0e0c',
-        background_color: '#0f0e0c',
+        // Same dark background as styles.css (--bg) and the theme-color metas.
+        theme_color: '#0f1410',
+        background_color: '#0f1410',
         display: 'standalone',
         orientation: 'portrait',
         scope: base,
@@ -48,11 +49,12 @@ export default defineConfig({
     }),
     // Build-time HTML transform: remove the entry <script type="module"> tag
     // Vite emits, and replace it with `window.__FT_ENTRY__ = {src, crossorigin}`
-    // at the start of <head>. The inline cleanup script in index.html reads
-    // that and only loads the module after Promise.all([unregister-SWs,
-    // delete-caches]) resolves — eliminating the race where a stale service
-    // worker intercepts the entry fetch and serves the wrong content (which
-    // iOS Safari masks as the unhelpful "Script error").
+    // at the start of <head>. The inline bootstrap script in index.html reads
+    // that and injects the module itself, after its error handlers and
+    // diagnostic log are set up. When the page is opened with ?reset=1 it
+    // instead unregisters every service worker, clears all caches and
+    // reloads without loading the app; on every other load the service
+    // worker is left alone so offline support keeps working.
     //
     // Also substitutes __FT_BUILD_STAMP_PLACEHOLDER__ in index.html with the
     // current ISO timestamp.

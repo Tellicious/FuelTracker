@@ -64,6 +64,32 @@ function mkCtx(
 }
 
 describe('checkConsumption (A)', () => {
+  it('compares against the distance-weighted average shown on the Dashboard', () => {
+    // Other intervals: 100 km / 10 l (10 km/l) and 900 km / 45 l (20 km/l).
+    // Mean of per-interval values = 15; distance-weighted = 1000 / 55 = 18.18.
+    // Candidate 9 km/l: -40% vs 15 (no warning at 45%), -50.5% vs 18.18 (warns).
+    const history = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54 }),
+      mkEntry({ date: '2026-01-10', odometer: 10100, gasLiters: 10, gasPricePerLiter: 1.8, totalCost: 18 }),
+      mkEntry({ date: '2026-02-10', odometer: 11000, gasLiters: 45, gasPricePerLiter: 1.8, totalCost: 81 }),
+    ];
+    const ctx = mkCtx(
+      {
+        vehicleType: 'ice',
+        date: '2026-03-01T00:00:00Z',
+        odometer: 11450,
+        gasLiters: 50,
+        gasPricePerLiter: 1.8,
+        totalCost: 90,
+      },
+      history,
+      { ...DEFAULT_THRESHOLDS, consumptionPercent: 45 },
+    );
+    const w = checkConsumption(ctx);
+    expect(w).not.toBeNull();
+    expect(w!.message).toContain('(18.2)');
+  });
+
   it('fires when km/l is more than 50% below the running average (ICE)', () => {
     // History: three intervals of ~16.7 km/l (500km / 30L)
     const history = [

@@ -26,7 +26,7 @@ If a stale SW cache on iOS Safari gets in your way while debugging, disable
 the PWA for a build with `ENABLE_PWA=0 npm run build`.
 
 Stuck behind a bad cache or a wedged service worker? Open the app with
-`?reset=1` appended to the URL. The gated bootstrap in `index.html`
+`?reset=1` appended to the URL. The bootstrap script in `index.html`
 unregisters every service worker, clears all caches, then reloads cleanly
 without the query string. On every other load the SW is left alone so
 offline support keeps working.
@@ -219,11 +219,9 @@ keep in mind:
 ## Project layout
 
 ```
-index.html             gated bootstrap: error capture + SW/cache cleanup runs
-                       BEFORE the entry module is injected, so a stale service
-                       worker can't intercept the fetch and serve the wrong
-                       content (which iOS Safari masks as "Script error").
-                       Open with ?reset=1 to force-unregister SWs + clear caches
+index.html             bootstrap: error capture + diagnostic card, then injects
+                       the entry module. Open with ?reset=1 to force-unregister
+                       SWs + clear caches (the app isn't loaded on that pass)
 
 src/
   App.tsx              orchestrator: settings, banner, SW update prompt,

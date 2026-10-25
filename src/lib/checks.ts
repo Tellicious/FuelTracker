@@ -1,5 +1,5 @@
 import type { FuelUp, VehicleType } from '../db/types';
-import { computeIntervals, sortFuelUps } from './stats';
+import { averageConsumption, computeIntervals, sortFuelUps } from './stats';
 
 // One soft warning surfaced to the user. None of these block save — the
 // user can review them in a confirm() dialog and proceed if they meant it.
@@ -84,7 +84,9 @@ function candidateAsFuelUp(c: CheckContext['candidate']): FuelUp {
 // (A) Consumption vs historical average. Recomputes intervals on the
 // vehicle as if the candidate were already saved, finds the interval that
 // closes AT the candidate (if any), and compares its key consumption
-// metric against the average of all OTHER intervals.
+// metric against the average of all OTHER intervals. The average is the
+// same distance-weighted one the Dashboard shows (stats.averageConsumption),
+// so the number quoted in the warning matches the Dashboard.
 //
 // Metric picked per vehicle type:
 //   ICE / HEV / PHEV-without-electricity → kmPerL
@@ -115,27 +117,24 @@ export function checkConsumption(ctx: CheckContext): Warning | null {
   // "higher is better" is true for km/l metrics, false for kWh/100km.
   let higherIsBetter = true;
 
+  const avg = averageConsumption(others);
+
   if (c.vehicleType === 'ev') {
-    if (cand.kWhPer100Km <= 0) return null;
-    const valid = others.filter((iv) => iv.kWhPer100Km > 0);
-    if (valid.length === 0) return null;
+    if (cand.kWhPer100Km <= 0 || avg.avgKWhPer100Km == null) return null;
     label = 'electricity consumption';
     candVal = cand.kWhPer100Km;
-    avgVal = valid.reduce((s, iv) => s + iv.kWhPer100Km, 0) / valid.length;
+    avgVal = avg.avgKWhPer100Km;
     higherIsBetter = false;
   } else if (c.vehicleType === 'phev' && cand.equivalentKmPerL > 0 && cand.electricityCost > 0) {
-    const valid = others.filter((iv) => iv.equivalentKmPerL > 0);
-    if (valid.length === 0) return null;
+    if (avg.avgEquivalentKmPerL == null) return null;
     label = 'equivalent fuel consumption';
     candVal = cand.equivalentKmPerL;
-    avgVal = valid.reduce((s, iv) => s + iv.equivalentKmPerL, 0) / valid.length;
+    avgVal = avg.avgEquivalentKmPerL;
   } else {
-    if (cand.kmPerL <= 0) return null;
-    const valid = others.filter((iv) => iv.kmPerL > 0);
-    if (valid.length === 0) return null;
+    if (cand.kmPerL <= 0 || avg.avgKmPerL == null) return null;
     label = 'fuel consumption';
     candVal = cand.kmPerL;
-    avgVal = valid.reduce((s, iv) => s + iv.kmPerL, 0) / valid.length;
+    avgVal = avg.avgKmPerL;
   }
 
   if (!(avgVal > 0)) return null;

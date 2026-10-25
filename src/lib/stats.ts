@@ -248,21 +248,9 @@ export function computeDashboard(
 
   const last = intervals[intervals.length - 1] ?? null;
 
-  const intervalsWithGas = intervals.filter((iv) => iv.gasLitersUsed > 0);
-  const avgKmPerL =
-    intervalsWithGas.length > 0
-      ? intervalsWithGas.reduce((s, iv) => s + iv.distanceKm, 0) /
-        intervalsWithGas.reduce((s, iv) => s + iv.gasLitersUsed, 0)
-      : null;
+  const { avgKmPerL, avgKWhPer100Km, avgEquivalentKmPerL } = averageConsumption(intervals);
   const bestGas = pickBest(intervals, (iv) => iv.kmPerL, 'max');
 
-  const intervalsWithKwh = intervals.filter((iv) => iv.kWhUsed > 0);
-  const avgKWhPer100Km =
-    intervalsWithKwh.length > 0
-      ? (intervalsWithKwh.reduce((s, iv) => s + iv.kWhUsed, 0) /
-          intervalsWithKwh.reduce((s, iv) => s + iv.distanceKm, 0)) *
-        100
-      : null;
   const bestElec = pickBest(intervals, (iv) => iv.kWhPer100Km, 'min');
 
   let lastKWhPer100Km: number | null = null;
@@ -273,18 +261,6 @@ export function computeDashboard(
     }
   }
 
-  let avgEquivalentKmPerL: number | null = null;
-  {
-    const totalGasCost = intervals.reduce((s, iv) => s + iv.gasCost, 0);
-    const totalGasQuantity = intervals.reduce((s, iv) => s + iv.gasLitersUsed, 0);
-    if (totalGasQuantity > 0 && totalTrackedKm > 0 && totalCostTracked > 0) {
-      const avgPumpPrice = totalGasCost / totalGasQuantity;
-      const costPerKm = totalCostTracked / totalTrackedKm;
-      if (avgPumpPrice > 0 && costPerKm > 0) {
-        avgEquivalentKmPerL = avgPumpPrice / costPerKm;
-      }
-    }
-  }
   const bestEquiv = pickBest(intervals, (iv) => iv.equivalentKmPerL, 'max');
 
   return {
@@ -308,6 +284,49 @@ export function computeDashboard(
     bestEquivalentKmPerLDate: bestEquiv?.toDate ?? null,
     intervals,
   };
+}
+
+// Distance-weighted average consumption over a set of intervals: total
+// distance ÷ total fuel (and total energy ÷ total distance), not a mean of
+// per-interval values, so long intervals weigh more than short ones.
+// Shared by the Dashboard (computeDashboard) and the consumption warning
+// (lib/checks) so both show the same "average".
+export function averageConsumption(intervals: Interval[]): {
+  avgKmPerL: number | null;
+  avgKWhPer100Km: number | null;
+  avgEquivalentKmPerL: number | null;
+} {
+  const intervalsWithGas = intervals.filter((iv) => iv.gasLitersUsed > 0);
+  const avgKmPerL =
+    intervalsWithGas.length > 0
+      ? intervalsWithGas.reduce((s, iv) => s + iv.distanceKm, 0) /
+        intervalsWithGas.reduce((s, iv) => s + iv.gasLitersUsed, 0)
+      : null;
+
+  const intervalsWithKwh = intervals.filter((iv) => iv.kWhUsed > 0);
+  const avgKWhPer100Km =
+    intervalsWithKwh.length > 0
+      ? (intervalsWithKwh.reduce((s, iv) => s + iv.kWhUsed, 0) /
+          intervalsWithKwh.reduce((s, iv) => s + iv.distanceKm, 0)) *
+        100
+      : null;
+
+  let avgEquivalentKmPerL: number | null = null;
+  {
+    const totalKm = intervals.reduce((s, iv) => s + iv.distanceKm, 0);
+    const totalCost = intervals.reduce((s, iv) => s + iv.totalCost, 0);
+    const totalGasCost = intervals.reduce((s, iv) => s + iv.gasCost, 0);
+    const totalGasQuantity = intervals.reduce((s, iv) => s + iv.gasLitersUsed, 0);
+    if (totalGasQuantity > 0 && totalKm > 0 && totalCost > 0) {
+      const avgPumpPrice = totalGasCost / totalGasQuantity;
+      const costPerKm = totalCost / totalKm;
+      if (avgPumpPrice > 0 && costPerKm > 0) {
+        avgEquivalentKmPerL = avgPumpPrice / costPerKm;
+      }
+    }
+  }
+
+  return { avgKmPerL, avgKWhPer100Km, avgEquivalentKmPerL };
 }
 
 function pickBest(

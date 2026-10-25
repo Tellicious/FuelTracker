@@ -31,12 +31,13 @@ export class FuelTrackerDB extends Dexie {
 
 export const db = new FuelTrackerDB();
 
-// Insert the global settings row if it's missing, returning it either way.
-// Called once at app boot to make sure the rest of the app can read
-// settings without nullability concerns.
+// Insert the global settings row if it's missing, returning it either way
+// (merged with DEFAULT_SETTINGS, exactly like getSettings). Called once at
+// app boot to make sure the rest of the app can read settings without
+// nullability concerns.
 export async function initializeSettings(): Promise<Settings> {
   const existing = await db.settings.get('global');
-  if (existing) return existing;
+  if (existing) return { ...DEFAULT_SETTINGS, ...existing };
   await db.settings.put(DEFAULT_SETTINGS);
   return DEFAULT_SETTINGS;
 }
@@ -50,8 +51,6 @@ export async function getSettings(): Promise<Settings> {
   if (!existing) return DEFAULT_SETTINGS;
   return { ...DEFAULT_SETTINGS, ...existing };
 }
-
-export const ensureSettings = initializeSettings;
 
 // Generate a globally-unique ID using the browser's crypto API. Used for
 // all primary keys (vehicles, fuelups). Modern Safari/Chrome guarantee

@@ -22,6 +22,7 @@ import {
 } from '../lib/backup';
 import { currencySymbol, fmtDate } from '../lib/format';
 import { DecimalInput } from '../components/DecimalInput';
+import { Modal } from '../components/Modal';
 import { ALLOWED_FIELDS_BY_TYPE, RECORD_FIELDS, sanitizeRecordFields } from '../lib/records-fields';
 
 const CURRENCIES = SUPPORTED_CURRENCIES;
@@ -65,6 +66,7 @@ export function SettingsScreen({ onToast }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [fieldsTab, setFieldsTab] = useState<'iceHybrid' | 'phev' | 'ev'>('iceHybrid');
+  const [pendingImport, setPendingImport] = useState<File | null>(null);
 
   if (!settings) return <div className="screen">Loading…</div>;
 
@@ -122,44 +124,44 @@ export function SettingsScreen({ onToast }: Props) {
     }
   };
 
+  // Picking a file opens a Merge / Replace / Cancel sheet instead of the
+  // old confirm(), where Cancel meant the destructive REPLACE.
   const onImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset so picking the same file again still fires onChange.
+    if (fileRef.current) fileRef.current.value = '';
+    if (file) setPendingImport(file);
+  };
+
+  const runImport = async (mode: 'merge' | 'replace') => {
+    const file = pendingImport;
+    setPendingImport(null);
     if (!file) return;
-    (async () => {
-      try {
-        const replaceWhat = describeReplace(file.name);
-        const mode = confirm(
-          `Press OK to MERGE (keeps existing data), or Cancel to REPLACE ${replaceWhat}.`,
-        )
-          ? 'merge'
-          : 'replace';
-        if (mode === 'replace') {
-          const confirmText = prompt(`Type DELETE to confirm replacing ${replaceWhat}`);
-          if (confirmText !== 'DELETE') {
-            onToast('Replace cancelled');
-            return;
-          }
-        }
-        const result = await importFile(file, mode);
-        if (result.kind === 'json') {
-          const removedMsg = result.fuelupsRemoved
-            ? `, ${result.fuelupsRemoved} orphaned entries removed`
-            : '';
-          onToast(`Imported config (${result.vehiclesImported} vehicles${removedMsg}, ${mode})`);
-        } else {
-          const stubMsg = result.createdStubVehicles.length
-            ? ` (+ ${result.createdStubVehicles.length} new vehicles)`
-            : '';
-          onToast(`Imported ${result.fuelupsImported} entries${stubMsg} (${mode})`);
-        }
-      } catch (err) {
-        console.error(err);
-        const msg = err instanceof Error ? err.message : 'Import failed';
-        onToast(msg);
-      } finally {
-        if (fileRef.current) fileRef.current.value = '';
+    if (mode === 'replace') {
+      const confirmText = prompt(`Type DELETE to confirm replacing ${describeReplace(file.name)}`);
+      if (confirmText !== 'DELETE') {
+        onToast('Replace cancelled');
+        return;
       }
-    })();
+    }
+    try {
+      const result = await importFile(file, mode);
+      if (result.kind === 'json') {
+        const removedMsg = result.fuelupsRemoved
+          ? `, ${result.fuelupsRemoved} orphaned entries removed`
+          : '';
+        onToast(`Imported config (${result.vehiclesImported} vehicles${removedMsg}, ${mode})`);
+      } else {
+        const stubMsg = result.createdStubVehicles.length
+          ? ` (+ ${result.createdStubVehicles.length} new vehicles)`
+          : '';
+        onToast(`Imported ${result.fuelupsImported} entries${stubMsg} (${mode})`);
+      }
+    } catch (err) {
+      console.error(err);
+      const msg = err instanceof Error ? err.message : 'Import failed';
+      onToast(msg);
+    }
   };
 
   // Write the three-field tuple back to settings.recordFieldsByType for
@@ -459,6 +461,39 @@ export function SettingsScreen({ onToast }: Props) {
       <div className="section-title">About</div>
       <div className="card mono" style={{ fontSize: 13, color: 'var(--muted)' }}>
         FuelTracker PWA v{settings.schemaVersion} · Tellicious 2026 </div>
+
+      <Modal
+        open={!!pendingImport}
+        title="Import file"
+        onClose={() => setPendingImport(null)}
+      >
+        {pendingImport && (
+          <div className="stack">
+            <div className="mono" style={{ wordBreak: 'break-all' }}>
+              {pendingImport.name}
+            </div>
+            <div className="input-help">
+              <strong>Merge</strong> keeps your existing data and adds or updates what's in the
+              file. <strong>Replace</strong> replaces {describeReplace(pendingImport.name)}.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button className="btn btn-danger" onClick={() => runImport('replace')}>
+                Replace
+              </button>
+              <button
+                className="btn"
+                style={{ marginLeft: 'auto' }}
+                onClick={() => setPendingImport(null)}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={() => runImport('merge')}>
+                Merge
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
