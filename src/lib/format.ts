@@ -40,13 +40,48 @@ export function fmtInt(n: number | null | undefined): string {
   return Math.round(n).toLocaleString(userLocale);
 }
 
-// Format a number as a currency value. The non-breaking space between the
-// symbol and the digits keeps "€ 0.118" from wrapping mid-value in narrow
-// containers like the dashboard KPI columns.
-export function fmtMoney(n: number | null | undefined, currency: string, decimals = 2): string {
+// Format a number as a currency value following the user's locale: symbol
+// position, spacing and separators come from Intl ("63,20 €" in it-IT,
+// "€63.20" in en-GB). narrowSymbol keeps "$" rather than "US$". Where a
+// locale puts a space between amount and symbol, Intl uses a non-breaking
+// one, so values still don't wrap mid-amount in narrow containers like the
+// dashboard KPI columns. Formatters are cached because Records renders
+// several amounts per row. If Intl rejects the currency code or the
+// narrowSymbol option (older engines), falls back to the previous
+// "symbol + nbsp + number" form. `locale` is a parameter for tests.
+const moneyFormatters = new Map<string, Intl.NumberFormat | null>();
+
+function moneyFormatter(locale: string, currency: string, decimals: number): Intl.NumberFormat | null {
+  const key = `${locale}|${currency}|${decimals}`;
+  if (!moneyFormatters.has(key)) {
+    let f: Intl.NumberFormat | null;
+    try {
+      f = new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency,
+        currencyDisplay: 'narrowSymbol',
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      });
+    } catch {
+      f = null;
+    }
+    moneyFormatters.set(key, f);
+  }
+  return moneyFormatters.get(key) ?? null;
+}
+
+export function fmtMoney(
+  n: number | null | undefined,
+  currency: string,
+  decimals = 2,
+  locale: string = userLocale,
+): string {
   if (n == null || !isFinite(n)) return '—';
+  const f = moneyFormatter(locale, currency, decimals);
+  if (f) return f.format(n);
   const sym = CURRENCY_SYMBOL[currency] ?? currency;
-  return sym + '\u00A0' + n.toLocaleString(userLocale, {
+  return sym + '\u00A0' + n.toLocaleString(locale, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });

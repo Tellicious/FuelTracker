@@ -37,5 +37,25 @@ async function bootstrap() {
 
 void bootstrap();
 
+// Ask the browser to treat this origin's storage as persistent. All data
+// lives only in this device's IndexedDB, so eviction under storage
+// pressure (or Safari's inactivity-based clean-up for sites opened in a
+// tab) would lose it. Best-effort: browsers decide by their own heuristics
+// (Firefox may show a permission prompt), and a refusal changes nothing
+// else — backups remain the safety net. Not awaited, so it never delays
+// the first render.
+async function requestPersistentStorage(): Promise<void> {
+  try {
+    if (!navigator.storage?.persist) return;
+    if (await navigator.storage.persisted()) return;
+    const granted = await navigator.storage.persist();
+    console.log('[ft] persistent storage', granted ? 'granted' : 'not granted');
+  } catch (err) {
+    console.warn('[ft] persistent storage request failed:', err);
+  }
+}
+
+void requestPersistentStorage();
+
 // Service-worker registration lives in App (useRegisterSW) so there is a
 // single registration that also drives the "new version" banner.
