@@ -167,12 +167,20 @@ export interface ImportResult {
   vehiclesImported: number;
   settingsImported: boolean;
   createdStubVehicles: string[];
+  // Entries deleted because a replace removed their vehicle.
+  fuelupsRemoved: number;
 }
 
 // Entry point for restoring from a user-selected file. Sniffs the format
 // (.json with a schemaVersion → config; otherwise CSV entries) and routes
-// to the matching importer. `mode` controls whether the existing DB rows
-// are kept ('merge') or wiped first ('replace').
+// to the matching importer. `mode` controls whether existing data is kept
+// ('merge') or replaced ('replace'). Replace swaps out exactly what the
+// file carries and never leaves orphans behind:
+//   CSV  → all entries are replaced; vehicles and settings are kept.
+//   JSON → all vehicles and settings are replaced; entries whose vehicle
+//          is not in the file are deleted (they'd otherwise be orphans
+//          that no screen shows but backups and the data hash still carry).
+// See describeReplace() for the user-facing wording.
 export async function importFile(
   file: File,
   mode: 'merge' | 'replace',
@@ -185,6 +193,14 @@ export async function importFile(
     return importConfigJson(text, mode);
   }
   return importEntriesCsv(text, mode);
+}
+
+// User-facing description of what a replace import deletes, keyed off
+// the file name (the same extension check importFile uses first).
+export function describeReplace(fileName: string): string {
+  return fileName.toLowerCase().endsWith('.json')
+    ? 'all vehicles and settings (entries of vehicles not in the file are deleted)'
+    : 'all entries (vehicles and settings are kept)';
 }
 
 // Restore vehicles + settings from a config JSON export. Refuses to load
@@ -201,9 +217,14 @@ async function importConfigJson(
       `Schema mismatch (file v${cfg.schemaVersion}, app v${SCHEMA_VERSION}).`,
     );
   }
-  await db.transaction('rw', db.vehicles, db.settings, async () => {
+  let fuelupsRemoved = 0;
+  await db.transaction('rw', db.vehicles, db.fuelups, db.settings, async () => {
     if (mode === 'replace') {
       await db.vehicles.clear();
+      const keep = new Set(cfg.vehicles.map((v) => v.id));
+      fuelupsRemoved = await db.fuelups
+        .filter((f) => !keep.has(f.vehicleId))
+        .delete();
     }
     if (cfg.vehicles.length) await db.vehicles.bulkPut(cfg.vehicles);
     if (cfg.settings) {
@@ -223,6 +244,7 @@ async function importConfigJson(
     vehiclesImported: cfg.vehicles.length,
     settingsImported: true,
     createdStubVehicles: [],
+    fuelupsRemoved,
   };
 }
 
@@ -252,5 +274,6 @@ async function importEntriesCsv(
     vehiclesImported: newVehicles.length,
     settingsImported: false,
     createdStubVehicles: newVehicles.map((v) => v.name),
+    fuelupsRemoved: 0,
   };
 }

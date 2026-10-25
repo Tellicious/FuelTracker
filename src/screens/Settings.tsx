@@ -13,6 +13,7 @@ import type {
 import { DEFAULT_RECORD_FIELDS, SUPPORTED_CURRENCIES } from '../db/types';
 import {
   buildPayload,
+  describeReplace,
   exportBackup,
   exportConfigJsonOnly,
   exportEntriesCsvOnly,
@@ -126,13 +127,14 @@ export function SettingsScreen({ onToast }: Props) {
     if (!file) return;
     (async () => {
       try {
+        const replaceWhat = describeReplace(file.name);
         const mode = confirm(
-          'Press OK to MERGE (keeps existing data), or Cancel to REPLACE all data.',
+          `Press OK to MERGE (keeps existing data), or Cancel to REPLACE ${replaceWhat}.`,
         )
           ? 'merge'
           : 'replace';
         if (mode === 'replace') {
-          const confirmText = prompt('Type DELETE to confirm replacing all data');
+          const confirmText = prompt(`Type DELETE to confirm replacing ${replaceWhat}`);
           if (confirmText !== 'DELETE') {
             onToast('Replace cancelled');
             return;
@@ -140,7 +142,10 @@ export function SettingsScreen({ onToast }: Props) {
         }
         const result = await importFile(file, mode);
         if (result.kind === 'json') {
-          onToast(`Imported config (${result.vehiclesImported} vehicles, ${mode})`);
+          const removedMsg = result.fuelupsRemoved
+            ? `, ${result.fuelupsRemoved} orphaned entries removed`
+            : '';
+          onToast(`Imported config (${result.vehiclesImported} vehicles${removedMsg}, ${mode})`);
         } else {
           const stubMsg = result.createdStubVehicles.length
             ? ` (+ ${result.createdStubVehicles.length} new vehicles)`

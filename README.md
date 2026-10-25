@@ -182,8 +182,15 @@ Settings → "Import file" auto-detects by extension:
   is rejected with a "schema mismatch" error so you update the app first.
   Backup-tracking fields are preserved from the existing device.
 
-Both formats prompt for **Merge** (upsert by id) or **Replace** (wipe table
-first, then insert). Replace requires typing `DELETE` as a sanity check.
+Both formats prompt for **Merge** (upsert by id) or **Replace**. Replace
+swaps out exactly what the file carries and never leaves orphans:
+
+- `.csv` replace deletes all entries first; vehicles and settings are kept.
+- `.json` replace deletes all vehicles and replaces the settings; entries
+  whose vehicle isn't in the file are deleted too (they would otherwise be
+  invisible orphans).
+
+Replace requires typing `DELETE` as a sanity check.
 
 ### Round-tripping through Excel
 
