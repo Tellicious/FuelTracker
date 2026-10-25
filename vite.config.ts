@@ -17,7 +17,12 @@ export default defineConfig({
     react(),
     VitePWA({
       disable: pwaDisabled,
-      registerType: 'autoUpdate',
+      // 'prompt', not 'autoUpdate': in autoUpdate mode the register code
+      // calls window.location.reload() as soon as a new service worker
+      // activates, which can wipe a half-typed entry. With 'prompt' the
+      // new worker waits and App shows the "new version" banner; the
+      // reload only happens when the user taps Reload.
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'icons/icon-180.png'],
       manifest: {
         name: 'FuelTracker',

@@ -76,9 +76,16 @@ export function App() {
     if (settings?.themeMode) applyThemeFromSettings(settings.themeMode);
   }, [settings?.themeMode]);
 
+  // The only service-worker registration (main.tsx used to register a
+  // second one). registerType is 'prompt', so an update sets needRefresh
+  // and waits for the user to tap Reload in the banner below.
   const { needRefresh, updateServiceWorker } = useRegisterSW({
-    onRegisteredSW() {
-
+    immediate: true,
+    onRegisteredSW(swUrl) {
+      console.log('[ft] service worker registered:', swUrl);
+    },
+    onRegisterError(err) {
+      console.error('[ft] service worker registration failed:', err);
     },
   });
   const [refreshState] = needRefresh;
