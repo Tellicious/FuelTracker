@@ -80,6 +80,32 @@ export function fmtDateShort(iso: string): string {
   }
 }
 
+// Parse a date string from an import file and normalise it to the
+// canonical stored form (Date.toISOString(), UTC with milliseconds), so
+// entries sort correctly by plain string comparison. Only ISO 8601 is
+// accepted: YYYY-MM-DD, optionally followed by T or space and HH:MM[:SS[.sss]]
+// and an optional Z or ±HH:MM offset. Date-only and offset-less values are
+// read as local time (same as the entry form's date picker). Returns null
+// for anything else — including locale formats such as 14/05/2026, which
+// are ambiguous (dd/mm vs mm/dd) and which JS engines parse inconsistently —
+// and for impossible days such as 2026-02-30 (which engines silently roll
+// over to March).
+const ISO_DATE_RE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/;
+
+export function parseIsoDate(raw: string): string | null {
+  const m = ISO_DATE_RE.exec(raw.trim());
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth) return null;
+  const normalised = m[4] === undefined ? `${m[0].trim()}T00:00` : raw.trim().replace(' ', 'T');
+  const d = new Date(normalised);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 // ISO 8601 timestamp for a Date (defaults to now). Used for storing fuel-up
 // dates in the DB so they're tz-portable.
 export function isoDate(d: Date = new Date()): string {

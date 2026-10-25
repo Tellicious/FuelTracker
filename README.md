@@ -201,9 +201,13 @@ keep in mind:
 - Leave `id` empty for new rows — the importer will mint a fresh id.
 - `vehicleId` is opaque — fill in `vehicle` (the name column) and the importer
   will resolve it.
-- Date column should be ISO 8601. If Excel auto-converts dates to its own
+- Date column must be ISO 8601 (`2026-05-14`, `2026-05-14T10:30` or the
+  exported `2026-05-14T10:30:00.000Z`; date-only and offset-less values are
+  read as local time). Locale formats like `14/05/2026` are rejected with the
+  row number rather than guessed. If Excel auto-converts dates to its own
   format, set the column to text before pasting, or use Numbers / Sheets which
   are less aggressive about coercion.
+- A blank or non-numeric `odometer` is rejected with the row number.
 
 ## Project layout
 

@@ -111,6 +111,38 @@ describe('CSV round-trip', () => {
     expect(fuelups.map((f) => f.odometer)).toEqual([1000, 1500]);
   });
 
+  it('normalises ISO dates and rejects non-ISO ones with the row number', () => {
+    const head = 'date,vehicle,vehicleId,odometer,gasLiters\n';
+    const ok = csvToFuelups(
+      head +
+        '2024-01-15T10:00:00.000Z,,v1,1000,30\n' +
+        '2024-02-01 09:30,,v1,1500,30\n' +
+        '2024-03-01,,v1,2000,30\n',
+      [vehicle],
+    );
+    expect(ok.fuelups[0].date).toBe('2024-01-15T10:00:00.000Z');
+    expect(ok.fuelups[1].date).toBe(new Date('2024-02-01T09:30').toISOString());
+    expect(ok.fuelups[2].date).toBe(new Date('2024-03-01T00:00').toISOString());
+
+    // Regression: these used to be stored raw (or as "now" when blank),
+    // breaking string-based sorting and the date picker.
+    expect(() => csvToFuelups(head + '14/05/2024,,v1,1000,30\n', [vehicle])).toThrow(/Row 2: invalid date/);
+    expect(() => csvToFuelups(head + '2024-02-30,,v1,1000,30\n', [vehicle])).toThrow(/invalid date/);
+    expect(() => csvToFuelups(head + ',,v1,1000,30\n', [vehicle])).toThrow(/invalid date/);
+  });
+
+  it('rejects blank or malformed odometers instead of importing 0 / truncating', () => {
+    const head = 'date,vehicle,vehicleId,odometer,gasLiters\n';
+    expect(() => csvToFuelups(head + '2024-01-01,,v1,,30\n', [vehicle])).toThrow(/invalid odometer/);
+    expect(() => csvToFuelups(head + '2024-01-01,,v1,"12,345",30\n', [vehicle])).toThrow(/invalid odometer/);
+  });
+
+  it('ignores a UTF-8 byte-order mark (Excel "CSV UTF-8")', () => {
+    const csv = '\uFEFFdate,vehicle,vehicleId,odometer,gasLiters\n2024-01-15T10:00:00.000Z,,v1,1000,30\n';
+    const { fuelups } = csvToFuelups(csv, [vehicle]);
+    expect(fuelups[0].date).toBe('2024-01-15T10:00:00.000Z');
+  });
+
   it('flags unknown vehicle names when the matching vehicle is missing', () => {
     const entries = [
       mkEntry({

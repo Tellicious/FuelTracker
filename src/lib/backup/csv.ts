@@ -1,5 +1,6 @@
 import { uid } from '../../db/db';
 import type { FuelUp, Vehicle } from '../../db/types';
+import { parseIsoDate } from '../format';
 
 const NEW_COLUMNS = [
   'date',
@@ -171,14 +172,22 @@ function inferPlaceholderType(p: Placeholder): Vehicle['type'] {
 // current split-column format (gasLiters/gasPricePerLiter, kWhCharged/
 // kWhPrice, phevKwhPer100Km/phevKwhPrice).
 export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult {
+  // Strip a UTF-8 byte-order mark (Excel adds one when saving as CSV
+  // UTF-8); otherwise the first header would read "\uFEFFdate".
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
   // Drop blank lines (a row that is a single whitespace-only cell).
   const rows = parseCsv(text).filter((r) => !(r.length === 1 && r[0].trim() === ''));
   if (rows.length < 1) throw new Error('CSV is empty.');
 
   const header = rows[0].map((h) => h.trim());
-  if (!header.includes('odometer') || (!header.includes('vehicleId') && !header.includes('vehicle'))) {
+  if (
+    !header.includes('date') ||
+    !header.includes('odometer') ||
+    (!header.includes('vehicleId') && !header.includes('vehicle'))
+  ) {
     throw new Error(
-      "CSV doesn't look like a FuelTracker export (missing odometer or vehicle columns).",
+      "CSV doesn't look like a FuelTracker export (missing date, odometer or vehicle columns).",
     );
   }
 
@@ -259,10 +268,24 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
       throw new Error(`Row ${i + 1}: missing both vehicleId and vehicle name.`);
     }
 
+    // Blank used to become 0 and parseInt silently truncated values like
+    // "12.345" or "12,345" to 12; now anything that isn't a plain
+    // non-negative number is rejected with the row number.
     const odometerStr = get(idx.odometer).trim();
-    const odometer = parseInt(odometerStr || '0', 10);
-    if (!isFinite(odometer)) {
+    const odometerNum = odometerStr === '' ? NaN : Number(odometerStr);
+    if (!Number.isFinite(odometerNum) || odometerNum < 0) {
       throw new Error(`Row ${i + 1}: invalid odometer "${odometerStr}".`);
+    }
+    const odometer = Math.round(odometerNum);
+
+    // Dates are compared as strings throughout the app, so they must be
+    // canonical ISO; a blank date used to silently become "now".
+    const dateStr = get(idx.date).trim();
+    const date = parseIsoDate(dateStr);
+    if (!date) {
+      throw new Error(
+        `Row ${i + 1}: invalid date "${dateStr}" (expected ISO, e.g. 2026-05-14 or 2026-05-14T10:30).`,
+      );
     }
 
     const gasLiters = parseNumOrNull(get(idx.gasLiters));
@@ -282,7 +305,7 @@ export function csvToFuelups(text: string, vehicles: Vehicle[]): CsvParseResult 
     out.push({
       id: get(idx.id).trim() || uid(),
       vehicleId: resolvedVehicleId,
-      date: get(idx.date).trim() || new Date().toISOString(),
+      date,
       odometer,
       partial: parseBool(get(idx.partial)),
       missed: parseBool(get(idx.missed)),
