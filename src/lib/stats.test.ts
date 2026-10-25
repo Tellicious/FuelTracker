@@ -48,7 +48,7 @@ describe('computeIntervals', () => {
     expect(ivs[0].gasLitersUsed).toBe(35);
   });
 
-  it('PHEV: closing entry phev rate applies to the FULL interval, even with a partial in between', () => {
+  it('PHEV: a partial without a reading takes the interval average (here the closing rate)', () => {
     const entries: FuelUp[] = [
       mkEntry({ date: '2026-03-01T00:00:00Z', odometer: 43515, gasLiters: 30, gasPricePerLiter: 1.70, totalCost: 51.0 }),
       mkEntry({ date: '2026-04-10T00:00:00Z', odometer: 44110, gasLiters: 12, gasPricePerLiter: 1.71, totalCost: 20.52, partial: true }),
@@ -70,6 +70,108 @@ describe('computeIntervals', () => {
     expect(iv.electricityCost).toBeCloseTo(7.7155, 3);
     expect(iv.gasLitersUsed).toBeCloseTo(37.63, 2);
     expect(iv.gasCost).toBeCloseTo(64.53, 2);
+  });
+
+  it('PHEV: each reading covers the stretch since the previous fuel-up, partial included', () => {
+    // The trip computer resets at every refuel, so the partial's 10 kWh/100km
+    // covers 10000→10400 and the closing 20 kWh/100km only 10400→11000.
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54 }),
+      mkEntry({
+        date: '2026-01-10',
+        odometer: 10400,
+        gasLiters: 10,
+        gasPricePerLiter: 1.8,
+        totalCost: 18,
+        partial: true,
+        phevKwhPer100Km: 10,
+        phevKwhPrice: 0.25,
+      }),
+      mkEntry({
+        date: '2026-01-20',
+        odometer: 11000,
+        gasLiters: 20,
+        gasPricePerLiter: 1.8,
+        totalCost: 36,
+        phevKwhPer100Km: 20,
+        phevKwhPrice: 0.3,
+      }),
+    ];
+    const [iv] = computeIntervals(entries, 'phev');
+    // 400 km × 10/100 + 600 km × 20/100 = 40 + 120 kWh
+    expect(iv.kWhUsed).toBeCloseTo(160, 6);
+    // 40 × 0.25 + 120 × 0.30
+    expect(iv.electricityCost).toBeCloseTo(46, 6);
+    expect(iv.kWhPer100Km).toBeCloseTo(16, 6);
+  });
+
+  it('PHEV: a reading on the partial is used when the closing fill-up has none', () => {
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54 }),
+      mkEntry({
+        date: '2026-01-10',
+        odometer: 10400,
+        gasLiters: 10,
+        gasPricePerLiter: 1.8,
+        totalCost: 18,
+        partial: true,
+        phevKwhPer100Km: 10,
+        phevKwhPrice: 0.25,
+      }),
+      mkEntry({ date: '2026-01-20', odometer: 11000, gasLiters: 20, gasPricePerLiter: 1.8, totalCost: 36 }),
+    ];
+    const [iv] = computeIntervals(entries, 'phev');
+    // The closing stretch has no reading/price: filled with 10 kWh/100km at 0.25.
+    expect(iv.kWhUsed).toBeCloseTo(100, 6);
+    expect(iv.electricityCost).toBeCloseTo(25, 6);
+  });
+
+  it('PHEV: a stretch without a price uses the energy-weighted average price', () => {
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54 }),
+      mkEntry({
+        date: '2026-01-10',
+        odometer: 10500,
+        gasLiters: 10,
+        gasPricePerLiter: 1.8,
+        totalCost: 18,
+        partial: true,
+        phevKwhPer100Km: 10,
+        phevKwhPrice: 0.2,
+      }),
+      mkEntry({
+        date: '2026-01-15',
+        odometer: 11000,
+        gasLiters: 10,
+        gasPricePerLiter: 1.8,
+        totalCost: 18,
+        partial: true,
+        phevKwhPer100Km: 10,
+        phevKwhPrice: 0.4,
+      }),
+      mkEntry({
+        date: '2026-01-20',
+        odometer: 11500,
+        gasLiters: 20,
+        gasPricePerLiter: 1.8,
+        totalCost: 36,
+        phevKwhPer100Km: 10,
+      }),
+    ];
+    const [iv] = computeIntervals(entries, 'phev');
+    // 3 stretches × 50 kWh; the last is priced at (50×0.2 + 50×0.4) / 100 = 0.3.
+    expect(iv.kWhUsed).toBeCloseTo(150, 6);
+    expect(iv.electricityCost).toBeCloseTo(10 + 20 + 15, 6);
+  });
+
+  it('PHEV: no reading anywhere in the interval means no electricity', () => {
+    const entries: FuelUp[] = [
+      mkEntry({ date: '2026-01-01', odometer: 10000, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54 }),
+      mkEntry({ date: '2026-01-20', odometer: 10600, gasLiters: 30, gasPricePerLiter: 1.8, totalCost: 54, phevKwhPrice: 0.3 }),
+    ];
+    const [iv] = computeIntervals(entries, 'phev');
+    expect(iv.kWhUsed).toBe(0);
+    expect(iv.electricityCost).toBe(0);
   });
 
   it('PHEV: equivalent km/l matches the bug report (752 km, 25.63 L, 3.80 kWh/100km)', () => {

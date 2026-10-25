@@ -818,7 +818,7 @@ function PhevElectricitySection({
 }) {
   return (
     <>
-      <div className="section-title">Electricity since previous full fuel-up (optional)</div>
+      <div className="section-title">Electricity since previous fuel-up (optional)</div>
       <div className="field">
         <label className="field-label">Avg electricity consumption</label>
         <div className="field-row">
@@ -833,8 +833,9 @@ function PhevElectricitySection({
           <span className="field-suffix">kWh/100 km</span>
         </div>
         <div className="field-hint">
-          Reset the trip computer at each full fuel-up; this value covers the
-          whole interval back to the previous full fill.
+          The trip computer's "since refuelling" value: it covers the distance
+          since the previous fuel-up, partial or full. If you skip it, that
+          stretch uses the average of the other readings in the interval.
         </div>
       </div>
       <div className="field">

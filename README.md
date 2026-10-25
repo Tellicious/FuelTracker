@@ -43,7 +43,7 @@ For iOS Safari to register the service worker and offer the proper "Add to Home 
 | -------------- | ------------------------------------------------------------- | ------------------------------- | -------------------- |
 | `ice`          | gas (l, €/l, total)                                           | hidden                          | = gas km/l           |
 | `hybrid` (HEV) | gas (l, €/l, total)                                           | hidden                          | = gas km/l           |
-| `phev`         | gas + optional kWh/100 km & €/kWh since previous full fuel-up | shown                           | computed (see below) |
+| `phev`         | gas + optional kWh/100 km & €/kWh since previous fuel-up      | shown                           | computed (see below) |
 | `ev`           | kWh charged + €/kWh                                           | shown (only column)             | hidden               |
 
 ### Equivalent km/l (PHEV)
@@ -52,11 +52,18 @@ For each full-to-full interval:
 
 ```
 gasCost          = Σ entry.totalCost          (over interval, gas only)
-electricityCost  = (closing.phevKwhPer100Km / 100) × distanceKm × closing.phevKwhPrice
+electricityCost  = Σ over the interval's stretches (previous entry → entry):
+                     (entry.phevKwhPer100Km / 100) × stretchKm × entry.phevKwhPrice
 totalCost        = gasCost + electricityCost
 equivLiters      = totalCost / closing.gasPricePerLiter
 equivalentKmPerL = distanceKm / equivLiters
 ```
+
+The PHEV reading is the trip computer's "since refuelling" average, which
+resets at every refuel — partial ones included — so each entry's reading
+covers only the stretch since the previous entry. A stretch without a
+reading uses the distance-weighted average of the interval's readings; a
+stretch without a price uses the energy-weighted average of its prices.
 
 **Average and best are computed over valid intervals**, not over aggregates:
 
@@ -123,7 +130,7 @@ date,vehicle,vehicleId,odometer,gasLiters,gasPricePerLiter,kWhCharged,kWhPrice,t
 | `totalCost`        | decimal or empty | total paid for this entry's purchase                                                                                                                                                                         |
 | `partial`          | `true` / `false` | partial fill / partial charge — accumulates into the next full entry's interval                                                                                                                              |
 | `missed`           | `true` / `false` | a fuel-up between the previous entry and this one wasn't logged — interval is excluded from stats                                                                                                            |
-| `phevKwhPer100Km`  | decimal or empty | PHEV-only: average kWh/100 km observed over the interval ending at this entry, read from the trip computer at the previous full fuel-up. Set only on full fuel-ups; values on partials are ignored by stats. |
+| `phevKwhPer100Km`  | decimal or empty | PHEV-only: average kWh/100 km since the previous fuel-up (partial or full), read from the trip computer's "since refuelling" value. Used on partial and full fuel-ups alike.            |
 | `phevKwhPrice`     | decimal or empty | PHEV-only: €/kWh paid for that electricity                                                                                                                                                                   |
 | `notes`            | string           | line breaks are kept (inside a quoted cell)                                                                                                                                                                  |
 | `id`               | string           | uid; empty cells get a fresh id on import (so you can add rows in Excel)                                                                                                                                     |

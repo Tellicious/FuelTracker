@@ -139,10 +139,10 @@ export const RECORD_FIELDS: Record<RecordField, RecordFieldDef> = {
         if (entry.totalCost == null) return null;
         return fmtMoney(entry.totalCost, currency, 2);
       }
-      // For PHEV electricity cost is derived from
-      // phevKwhPer100Km × interval distance × phevKwhPrice, which is
-      // computed inside the interval. It only exists at a closing full
-      // fill-up with valid phev electricity data.
+      // For PHEV electricity cost is derived inside the interval from the
+      // phevKwhPer100Km / phevKwhPrice readings of its entries (each one
+      // covering the stretch since the previous fuel-up), so it only
+      // exists at a closing full fill-up of an interval with readings.
       if (vehicleType === 'phev') {
         if (interval == null) return null;
         if (!(interval.electricityCost > 0)) return null;

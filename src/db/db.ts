@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, type FuelUp, type Settings, type Vehicle } from './ty
 // (one global row keyed 'global'). The schema is split per vehicle type:
 // gas columns (gasLiters/gasPricePerLiter) for ICE/HEV/PHEV fills,
 // electricity columns (kWhCharged/kWhPrice) for EV charges, and PHEV-only
-// columns (phevKwhPer100Km/phevKwhPrice) for electricity-since-last-full.
+// columns (phevKwhPer100Km/phevKwhPrice) for electricity since the previous fuel-up.
 //
 // Note on the recently-added Settings fields (recordFieldsByType and the
 // five warning thresholds): no schema bump or migration is needed. The

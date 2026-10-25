@@ -68,6 +68,64 @@ export function sortFuelUps(entries: FuelUp[]): FuelUp[] {
   });
 }
 
+// PHEV electricity used over the interval sorted[from] → sorted[to].
+// The car's trip computer resets at every refuel, partial ones included,
+// so each entry's phevKwhPer100Km is the average over the stretch since
+// the PREVIOUS entry, and its phevKwhPrice prices that stretch. The
+// interval's electricity is the sum over its stretches. (Applying the
+// closing entry's reading to the whole interval, as before, was wrong
+// whenever a partial fill-up split it: that reading only covers the last
+// stretch.)
+// Gaps: a stretch without a reading uses the distance-weighted average of
+// the interval's readings; a stretch without a price uses the
+// energy-weighted average of the interval's prices. With no reading at
+// all the interval has no electricity; with no price at all, no
+// electricity cost.
+function phevElectricity(
+  sorted: FuelUp[],
+  from: number,
+  to: number,
+): { kWh: number; cost: number } {
+  const stretches: { km: number; rate: number | null; price: number | null }[] = [];
+  for (let j = from + 1; j <= to; j++) {
+    stretches.push({
+      km: Math.max(0, sorted[j].odometer - sorted[j - 1].odometer),
+      rate: sorted[j].phevKwhPer100Km,
+      price: sorted[j].phevKwhPrice,
+    });
+  }
+
+  let ratedKm = 0;
+  let ratedKwh = 0;
+  for (const s of stretches) {
+    if (s.rate == null) continue;
+    ratedKm += s.km;
+    ratedKwh += (s.rate / 100) * s.km;
+  }
+  if (ratedKm <= 0) return { kWh: 0, cost: 0 };
+  const avgRate = (ratedKwh / ratedKm) * 100;
+
+  const energy = stretches.map((s) => ((s.rate ?? avgRate) / 100) * s.km);
+
+  let pricedKwh = 0;
+  let pricedCost = 0;
+  stretches.forEach((s, k) => {
+    if (s.price == null) return;
+    pricedKwh += energy[k];
+    pricedCost += energy[k] * s.price;
+  });
+  const avgPrice = pricedKwh > 0 ? pricedCost / pricedKwh : null;
+
+  let kWh = 0;
+  let cost = 0;
+  stretches.forEach((s, k) => {
+    kWh += energy[k];
+    const price = s.price ?? avgPrice;
+    if (price != null) cost += energy[k] * price;
+  });
+  return { kWh, cost };
+}
+
 export function computeIntervals(
   entries: FuelUp[],
   vehicleType: VehicleType = 'ice',
@@ -111,12 +169,10 @@ export function computeIntervals(
       continue;
     }
 
-    if (isPhev && end.phevKwhPer100Km != null) {
-      const kWh = (end.phevKwhPer100Km / 100) * distanceKm;
-      kWhUsed += kWh;
-      if (end.phevKwhPrice != null) {
-        electricityCost += kWh * end.phevKwhPrice;
-      }
+    if (isPhev) {
+      const electricity = phevElectricity(sorted, anchorIdx, i);
+      kWhUsed += electricity.kWh;
+      electricityCost += electricity.cost;
     }
 
     const kmPerL = gasLitersUsed > 0 ? distanceKm / gasLitersUsed : 0;
