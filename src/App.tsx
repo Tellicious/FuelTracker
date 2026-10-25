@@ -8,8 +8,8 @@ import { TabBar, type Tab } from './components/TabBar';
 import { db, getSettings } from './db/db';
 import { safeGet, safeSet } from './lib/storage';
 import {
+  backupNow,
   buildPayload,
-  exportBackup,
   isBackupOverdue,
   payloadHash,
 } from './lib/backup';
@@ -146,16 +146,8 @@ export function App() {
 
   const handleBannerBackup = async () => {
     try {
-      const payload = await buildPayload();
-      const ok = await exportBackup(payload);
-      if (ok) {
-        const hash = await payloadHash(payload);
-        await db.settings.update('global', {
-          lastBackupAt: new Date().toISOString(),
-          lastBackupHash: hash,
-        });
-        pushToast('Backup ready');
-      }
+      const ok = await backupNow();
+      if (ok) pushToast('Backup ready');
       setBannerDismissed(true);
     } catch (e) {
       console.error(e);

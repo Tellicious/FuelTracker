@@ -12,13 +12,12 @@ import type {
 } from '../db/types';
 import { DEFAULT_RECORD_FIELDS, SUPPORTED_CURRENCIES } from '../db/types';
 import {
+  backupNow,
   buildPayload,
   describeReplace,
-  exportBackup,
   exportConfigJsonOnly,
   exportEntriesCsvOnly,
   importFiles,
-  payloadHash,
 } from '../lib/backup';
 import { currencySymbol, fmtDate } from '../lib/format';
 import { DecimalInput } from '../components/DecimalInput';
@@ -74,21 +73,11 @@ export function SettingsScreen({ onToast }: Props) {
   const update = (patch: Partial<Settings>) => db.settings.update('global', patch);
 
 
-  const stampBackup = async () => {
-    const payload = await buildPayload();
-    const hash = await payloadHash(payload);
-    await update({ lastBackupAt: new Date().toISOString(), lastBackupHash: hash });
-  };
-
   const doExportBoth = async () => {
     setBusy(true);
     try {
-      const payload = await buildPayload();
-      const ok = await exportBackup(payload);
-      if (ok) {
-        await stampBackup();
-        onToast('Exported entries CSV + config JSON');
-      }
+      const ok = await backupNow();
+      if (ok) onToast('Exported entries CSV + config JSON');
     } catch (e) {
       onToast('Export failed');
       console.error(e);

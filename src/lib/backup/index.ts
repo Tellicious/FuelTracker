@@ -138,6 +138,24 @@ export async function exportBackup(payload: BackupPayload): Promise<boolean> {
   return shareOrDownload([csvFile, jsonFile]);
 }
 
+// The whole "Back up now" flow, shared by the backup banner and Settings:
+// snapshot the data, export it (share sheet or download) and, unless the
+// user cancelled, record the backup time and the hash of exactly the
+// payload that was exported. Hashing that payload (rather than re-reading
+// the DB afterwards) means anything that changed in the meantime still
+// counts as not backed up. Returns false if the user cancelled.
+export async function backupNow(): Promise<boolean> {
+  const payload = await buildPayload();
+  const ok = await exportBackup(payload);
+  if (ok) {
+    await db.settings.update('global', {
+      lastBackupAt: new Date().toISOString(),
+      lastBackupHash: await payloadHash(payload),
+    });
+  }
+  return ok;
+}
+
 // Export only the entries CSV (handy when the user just wants to spot-check
 // numbers in Numbers / Excel without producing a full backup).
 export async function exportEntriesCsvOnly(payload: BackupPayload): Promise<boolean> {
