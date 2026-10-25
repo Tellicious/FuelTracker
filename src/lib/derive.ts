@@ -13,7 +13,10 @@ export interface DeriveResult {
   unitPrice: number;
   totalCost: number;
 
-  derivedField: DeriveField;
+  // null when nothing was derived: all three values were already present
+  // and the user hasn't touched any of them (e.g. an entry loaded for
+  // editing), so they are returned exactly as stored.
+  derivedField: DeriveField | null;
 }
 
 const ALL_FIELDS: DeriveField[] = ['amount', 'unitPrice', 'totalCost'];
@@ -64,7 +67,11 @@ function computeFrom(
 // When exactly two fields are filled, derives the third. When all three are
 // filled, derives whichever the user touched LEAST recently — `lastTouched`
 // is a stack of the most-recently-edited fields, so the field not in the
-// top two is the one we recalculate. Returns null when fewer than two
+// top two is the one we recalculate. If all three are filled and nothing
+// has been touched yet (an entry just loaded for editing), the stored
+// values are returned untouched: re-deriving one of them from the other
+// two would reintroduce rounding drift (a 3-decimal unit price can't
+// reproduce the original liters exactly). Returns null when fewer than two
 // fields are filled (caller should leave the form alone).
 export function reconcile(
   v: DeriveValues,
@@ -82,6 +89,14 @@ export function reconcile(
     return computeFrom(target, v);
   }
   if (filledCount === 3) {
+    if (lastTouched.length === 0) {
+      return {
+        amount: v.amount!,
+        unitPrice: v.unitPrice!,
+        totalCost: v.totalCost!,
+        derivedField: null,
+      };
+    }
     const top2 = lastTouched.slice(0, 2);
     const target = ALL_FIELDS.find((f) => !top2.includes(f)) ?? ALL_FIELDS[2];
     return computeFrom(target, v);
